@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { db } from "./index";
+import { db, ensureSchema } from "./index";
 import { deadlines, fines, maintenances, refuels, vehicles } from "./schema";
 
 // ---------------------------------------------------------------------------
@@ -26,6 +26,7 @@ const eur = (n: number) => n.toFixed(2);
 // Seed
 // ---------------------------------------------------------------------------
 async function main() {
+  await ensureSchema(); // crea le tabelle se il database e' nuovo
   console.log("Pulizia tabelle...");
   await db.delete(fines);
   await db.delete(refuels);

@@ -5,7 +5,8 @@ echo ============================================================
 echo    AGGIORNAMENTO DA GITHUB - Banca Dati Automezzi
 echo ============================================================
 echo.
-echo Di solito non serve: il programma si aggiorna da solo quando lo apri.
+echo Di solito non serve: nel programma c'e' il pulsante "Sincronizza con GitHub".
+echo Usa questo file solo se il programma non si apre. Chiudi il programma prima.
 echo Scarica l'ultima versione del programma. I dati NON vengono toccati
 echo (prima viene comunque salvata una copia nella cartella "backup").
 echo.

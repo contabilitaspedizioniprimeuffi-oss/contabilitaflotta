@@ -1,10 +1,14 @@
 // =============================================================================
 //  Banca Dati Automezzi - programma di avvio ("Banca Dati Automezzi.exe")
 // =============================================================================
-//  1) installa gli aggiornamenti da GitHub (strumenti\aggiorna.ps1)
+//  1) prepara il programma (strumenti\aggiorna.ps1 -SoloAvvio): nessun
+//     download, ricompila solo se serve
 //  2) avvia il server locale del programma in background
 //  3) apre la finestra del programma (Edge in modalita' applicazione)
-//  4) quando la finestra viene chiusa, arresta il server
+//  4) se nel programma si preme "Sincronizza con GitHub" > "Scarica e
+//     installa", chiude il server, installa la nuova versione da GitHub
+//     (strumenti\aggiorna.ps1) e riapre il programma
+//  5) quando la finestra viene chiusa, arresta il server
 //
 //  Registri: cartella "logs" (avvio.log, server.log, aggiornamento.log)
 //
@@ -90,17 +94,96 @@ namespace BancaDatiAutomezzi
             }
 
             Process finestraApp = ApriFinestra();
-            if (finestraApp != null)
+            if (finestraApp == null) return;   // senza Edge: browser predefinito, il server resta attivo
+            SorvegliaFinestra(finestraApp);
+            Log("Finestra chiusa: arresto il server");
+            FermaServer();
+        }
+
+        // Resta in attesa finche' la finestra del programma e' aperta e intanto
+        // esegue gli aggiornamenti chiesti dal pulsante "Sincronizza con GitHub"
+        static void SorvegliaFinestra(Process finestraApp)
+        {
+            string richiesta = Path.Combine(logDir, "richiesta-aggiornamento");
+            try { File.Delete(richiesta); } catch { }
+            DateTime ultimaRichiesta = DateTime.MinValue;
+            DateTime prossimoControllo = DateTime.MinValue;
+            int assenze = 0;
+            while (true)
             {
-                finestraApp.WaitForExit();
-                // Edge a volte passa la finestra a un altro processo: si aspetta
-                // finche' resta aperta almeno una finestra con il profilo del programma
-                Thread.Sleep(3000);
-                while (EdgeProgrammaAperto()) Thread.Sleep(2000);
-                Log("Finestra chiusa: arresto il server");
-                FermaServer();
+                Thread.Sleep(1000);
+
+                if (File.Exists(richiesta))
+                {
+                    DateTime quando = DateTime.MinValue;
+                    string testo = "";
+                    try { quando = File.GetLastWriteTimeUtc(richiesta); } catch { }
+                    try { testo = File.ReadAllText(richiesta); } catch { }
+                    try { File.Delete(richiesta); } catch { }
+                    if (quando != ultimaRichiesta)
+                    {
+                        ultimaRichiesta = quando;
+                        AggiornaSuRichiesta(testo.Contains("forza"));
+                        assenze = 0;
+                        continue;
+                    }
+                }
+
+                bool processoVivo = false;
+                try { processoVivo = !finestraApp.HasExited; } catch { }
+                if (processoVivo) { assenze = 0; continue; }
+
+                // Edge a volte passa la finestra a un altro processo: si controlla
+                // se resta aperta una finestra con il profilo del programma
+                if (DateTime.Now < prossimoControllo) continue;
+                prossimoControllo = DateTime.Now.AddSeconds(2);
+                if (EdgeProgrammaAperto()) assenze = 0;
+                else if (++assenze >= 2) return;
             }
-            // Senza Edge il programma si apre nel browser e il server resta attivo
+        }
+
+        // Aggiornamento chiesto dal pulsante "Sincronizza con GitHub"
+        static void AggiornaSuRichiesta(bool forza)
+        {
+            Log("---- Aggiornamento richiesto dal programma" + (forza ? " (forzato)" : "") + " ----");
+            serverPronto = false;
+            finestra = new FinestraAvvio();
+            finestra.TopMost = true;
+            finestra.Shown += delegate
+            {
+                Thread lavoro = new Thread(delegate ()
+                {
+                    try
+                    {
+                        finestra.Stato("Chiudo il programma per aggiornarlo...");
+                        FermaServer();
+                        AttendiPortaLibera(30);
+                        finestra.Stato("Scarico la nuova versione da GitHub...");
+                        EseguiAggiornamento(forza ? "-Forza" : "");
+                        finestra.Stato("Riapro il programma...");
+                        AvviaServer();
+                        serverPronto = AttendiServer(180);
+                        Log(serverPronto ? "Server pronto" : "Il server non risponde");
+                    }
+                    catch (Exception ex)
+                    {
+                        Log("Errore: " + ex);
+                    }
+                    finestra.Chiudi();
+                });
+                lavoro.IsBackground = true;
+                lavoro.Start();
+            };
+            Application.Run(finestra);
+
+            if (!serverPronto)
+            {
+                MessageBox.Show(
+                    "Il programma non si \u00e8 riaperto dopo l'aggiornamento.\n\n" +
+                    "Chiudi la finestra del programma e riaprilo. Se il problema resta, " +
+                    "i dettagli sono nella cartella:\n" + logDir,
+                    "Banca Dati Automezzi", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
         }
 
         // C'e' ancora un processo Edge che usa il profilo dedicato al programma?
@@ -127,7 +210,8 @@ namespace BancaDatiAutomezzi
         {
             try
             {
-                EseguiAggiornamento();
+                finestra.Stato("Avvio del programma...");
+                EseguiAggiornamento("-SoloAvvio");
                 finestra.Stato("Avvio del programma...");
                 AvviaServer();
                 serverPronto = AttendiServer(180);
@@ -143,7 +227,7 @@ namespace BancaDatiAutomezzi
         // ---------------------------------------------------------------------
         // Aggiornamento
         // ---------------------------------------------------------------------
-        static void EseguiAggiornamento()
+        static void EseguiAggiornamento(string opzioni)
         {
             string script = Path.Combine(appDir, @"strumenti\aggiorna.ps1");
             if (!File.Exists(script))
@@ -155,10 +239,9 @@ namespace BancaDatiAutomezzi
                                      @"WindowsPowerShell\v1.0\powershell.exe");
             if (!File.Exists(ps)) ps = "powershell.exe";
 
-            finestra.Stato("Controllo aggiornamenti...");
             ProcessStartInfo psi = new ProcessStartInfo();
             psi.FileName = ps;
-            psi.Arguments = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"" + script + "\" -DaLauncher";
+            psi.Arguments = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"" + script + "\" -DaLauncher " + opzioni;
             psi.WorkingDirectory = appDir;
             psi.UseShellExecute = false;
             psi.CreateNoWindow = true;
@@ -231,6 +314,19 @@ namespace BancaDatiAutomezzi
             return null;
         }
 
+        static string TrovaGit()
+        {
+            string la = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            string pf = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+            string[] candidati = {
+                Path.Combine(la, @"Programs\Git\cmd\git.exe"),
+                Path.Combine(pf, @"Git\cmd\git.exe"),
+                @"C:\Program Files\Git\cmd\git.exe"
+            };
+            foreach (string c in candidati) if (File.Exists(c)) return c;
+            return null;
+        }
+
         static void AvviaServer()
         {
             string nodeExe = TrovaNode();
@@ -259,9 +355,12 @@ namespace BancaDatiAutomezzi
             psi.CreateNoWindow = true;
             psi.WindowStyle = ProcessWindowStyle.Hidden;
             string path = Environment.GetEnvironmentVariable("PATH") ?? "";
+            string gitExe = TrovaGit();
+            if (gitExe != null) path = Path.GetDirectoryName(gitExe) + ";" + path;
             if (nodeExe != null) path = Path.GetDirectoryName(nodeExe) + ";" + path;
             psi.EnvironmentVariables["PATH"] = path;
             psi.EnvironmentVariables["NEXT_TELEMETRY_DISABLED"] = "1";
+            psi.EnvironmentVariables["BDA_LAUNCHER"] = "1";   // abilita "Sincronizza con GitHub"
             try { server = Process.Start(psi); }
             catch (Exception ex) { Log("Avvio server non riuscito: " + ex.Message); }
         }
@@ -296,15 +395,42 @@ namespace BancaDatiAutomezzi
             if (server == null) return;
             try
             {
-                if (server.HasExited) return;
-                ProcessStartInfo psi = new ProcessStartInfo("taskkill", "/PID " + server.Id + " /T /F");
-                psi.CreateNoWindow = true;
-                psi.UseShellExecute = false;
-                Process k = Process.Start(psi);
-                k.WaitForExit(10000);
+                if (!server.HasExited)
+                {
+                    ProcessStartInfo psi = new ProcessStartInfo(
+                        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "taskkill.exe"),
+                        "/PID " + server.Id + " /T /F");
+                    psi.CreateNoWindow = true;
+                    psi.UseShellExecute = false;
+                    Process k = Process.Start(psi);
+                    k.WaitForExit(10000);
+                }
             }
             catch { }
             try { if (!server.HasExited) server.Kill(); } catch { }
+            try { server.WaitForExit(10000); } catch { }
+            server = null;
+        }
+
+        static void AttendiPortaLibera(int secondi)
+        {
+            DateTime limite = DateTime.Now.AddSeconds(secondi);
+            while (DateTime.Now < limite && PortaOccupata()) Thread.Sleep(500);
+        }
+
+        static bool PortaOccupata()
+        {
+            try
+            {
+                using (System.Net.Sockets.TcpClient c = new System.Net.Sockets.TcpClient())
+                {
+                    IAsyncResult r = c.BeginConnect("127.0.0.1", Porta, null, null);
+                    if (!r.AsyncWaitHandle.WaitOne(700)) return false;
+                    c.EndConnect(r);
+                    return true;
+                }
+            }
+            catch { return false; }
         }
 
         // ---------------------------------------------------------------------

@@ -11,6 +11,7 @@ import {
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
+import GithubSync from "@/components/github-sync";
 import SyncButton from "@/components/sync-button";
 
 const NAV = [
@@ -93,8 +94,9 @@ export default function Shell({ children }: { children: ReactNode }) {
         </nav>
 
         {/* Sync Action */}
-        <div className="px-3 pb-2 pt-1">
+        <div className="space-y-2 px-3 pb-2 pt-1">
           <SyncButton variant="sidebar" />
+          <GithubSync />
         </div>
 
         {/* Footer */}

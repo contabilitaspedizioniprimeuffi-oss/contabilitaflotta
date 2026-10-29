@@ -13,15 +13,21 @@
     da solo alla versione precedente.
 
   Come viene usato
-  - in automatico da "Banca Dati Automezzi.exe" a ogni apertura del programma
+  - all'apertura del programma ("Banca Dati Automezzi.exe", con -SoloAvvio):
+    nessun download, controlla solo che il programma sia pronto (compilato)
+  - dal pulsante "Sincronizza con GitHub" nel programma: il programma di
+    avvio chiude il server, esegue questo script e riapre il programma
   - a mano con un doppio clic su "aggiorna-da-github.bat"
-  - una sola volta, dal file "primo-collegamento.bat", per collegare il PC
+  - la prima sincronizzazione di un PC (cartella copiata a mano o mai
+    collegata) viene riconosciuta da sola: copia completa della cartella
+    in backup\prima-del-collegamento-... e nessun ritorno alla vecchia storia
 
   Registro dettagliato: logs\aggiornamento.log
 ===============================================================================
 #>
 param(
-    [switch]$DaLauncher,         # chiamato dal programma all'avvio
+    [switch]$DaLauncher,         # chiamato da "Banca Dati Automezzi.exe"
+    [switch]$SoloAvvio,          # apertura del programma: nessun download
     [switch]$PrimoCollegamento,  # primo collegamento del PC a GitHub
     [switch]$Forza,              # ricompila anche se non ci sono novita'
     [switch]$Manuale,            # (compatibilita') avvio manuale
@@ -48,7 +54,7 @@ Set-Location -LiteralPath $Cartella
 $CartellaLog     = Join-Path $Cartella 'logs'
 $CartellaBackup  = Join-Path $Cartella 'backup'
 $FileLog         = Join-Path $CartellaLog 'aggiornamento.log'
-$FileUltimaBuild = Join-Path $Cartella 'strumenti/.ultima-build'
+$FileUltimaBuild = Join-Path $Cartella 'strumenti/.ultima-build'   # impronta del codice compilato
 $FileScartata    = Join-Path $Cartella 'strumenti/.versione-scartata'
 $FileExeVecchio  = Join-Path $Cartella ($NomeExe + '.old')
 
@@ -65,6 +71,10 @@ $script:Vecchio = $null             # versione installata prima dell'aggiornamen
 $script:Nuovo = $null               # versione scaricata da GitHub
 $script:Aggiornato = $false
 $script:DipendenzeCambiate = $false
+$script:PrimaVolta = [bool]$PrimoCollegamento   # cartella non ancora allineata alla storia di GitHub
+$script:Esito = 'gia-aggiornato'                # esito per il programma (logs\ultimo-aggiornamento.json)
+$script:MessaggioEsito = 'Nessuna novita'' da installare.'
+$script:ScriviEsito = $false
 
 # ---------------------------------------------------------------------------
 # Messaggi e registro
@@ -98,6 +108,29 @@ function Scrivi-File([string]$percorso, [string]$testo) {
         New-Item -ItemType Directory -Force -Path (Split-Path -Parent $percorso) | Out-Null
         Set-Content -LiteralPath $percorso -Value $testo -Encoding ASCII -ErrorAction Stop
     } catch { Scrivi-Log ('Impossibile scrivere ' + $percorso + ': ' + $_.Exception.Message) }
+}
+
+function Imposta-Esito([string]$esito, [string]$messaggio) {
+    $script:Esito = $esito
+    $script:MessaggioEsito = $messaggio
+}
+
+# Esito letto dal pulsante "Sincronizza con GitHub" (UTF-8 senza BOM)
+function Scrivi-Esito {
+    if (-not $script:ScriviEsito) { return }
+    $versione = $null
+    if ($Git) { $versione = Git-Out @('rev-parse', 'HEAD') }
+    $dati = [ordered]@{
+        esito     = $script:Esito
+        quando    = (Get-Date).ToString('o')
+        versione  = $versione
+        messaggio = $script:MessaggioEsito
+    }
+    try {
+        $json = ConvertTo-Json -InputObject $dati -Compress
+        [System.IO.File]::WriteAllText((Join-Path $CartellaLog 'ultimo-aggiornamento.json'), $json,
+            (New-Object System.Text.UTF8Encoding($false)))
+    } catch { Scrivi-Log ('Impossibile scrivere l''esito: ' + $_.Exception.Message) }
 }
 
 # ---------------------------------------------------------------------------
@@ -201,6 +234,30 @@ function Git-Esegui([string[]]$argomenti) {
     Scrivi-Log ('> git ' + ($argomenti -join ' '))
     & $Git @argomenti 2>&1 | ForEach-Object { Scrivi-Log ('  ' + $_) }
     return $LASTEXITCODE
+}
+
+# Impronta del codice presente nella cartella: dipende dal contenuto dei file
+# (esclusi dati e file generati), non solo dalla versione git. Se dei file
+# vengono copiati a mano, all'apertura successiva il programma si ricompila.
+function Impronta-Codice {
+    if (-not $Git) { return '' }
+    $indice = Join-Path ([IO.Path]::GetTempPath()) ('bda-indice-' + [guid]::NewGuid().ToString('N'))
+    $prima = $env:GIT_INDEX_FILE
+    $impronta = ''
+    try {
+        $env:GIT_INDEX_FILE = $indice
+        if (Git-Out @('rev-parse', '--verify', '-q', 'HEAD')) { $null = Git-Out @('read-tree', 'HEAD') }
+        $null = Git-Out @('add', '-A', '--', '.')
+        $impronta = Git-Out @('write-tree')
+    } catch {
+        $impronta = ''
+    } finally {
+        if ($prima) { $env:GIT_INDEX_FILE = $prima } else { Remove-Item Env:GIT_INDEX_FILE -ErrorAction SilentlyContinue }
+        Remove-Item -LiteralPath $indice -Force -ErrorAction SilentlyContinue
+    }
+    if (-not $impronta) { $impronta = Git-Out @('rev-parse', '--verify', '-q', 'HEAD') }
+    if (-not $impronta) { $impronta = '' }
+    return $impronta
 }
 
 function Porta-Occupata([int]$numero) {
@@ -313,7 +370,7 @@ function Ripristina-Exe {
 }
 
 function Torna-Indietro {
-    if (-not $script:Vecchio -or $PrimoCollegamento) { return }
+    if (-not $script:Vecchio -or $script:PrimaVolta) { return }
     Mostra-Stato 'Ripristino la versione precedente del programma...'
     $null = Git-Esegui @('reset', '--hard', $script:Vecchio)
     Ripristina-Exe
@@ -327,7 +384,7 @@ function Applica-Aggiornamento {
     $nuovo = $script:Nuovo
     Mostra-Stato 'Nuova versione trovata: salvo una copia dei dati...'
     Backup-Dati
-    if ($PrimoCollegamento) { Backup-Completo }
+    if ($script:PrimaVolta) { Backup-Completo }
 
     # file che cambiano
     $cambiati = @()
@@ -422,9 +479,9 @@ function Serve-Compilare {
     if ($Forza) { return $true }
     if (-not (Test-Path -LiteralPath (Join-Path $Cartella '.next/BUILD_ID'))) { return $true }
     if (-not $Git) { return $false }
-    $head = Git-Out @('rev-parse', 'HEAD')
-    if (-not $head) { return $false }
-    return ((Leggi-File $FileUltimaBuild) -ne $head)
+    $impronta = Impronta-Codice
+    if (-not $impronta) { return $false }
+    return ((Leggi-File $FileUltimaBuild) -ne $impronta)
 }
 
 function Compila {
@@ -452,9 +509,7 @@ function Compila {
 
     if ($codice -eq 0 -and (Test-Path -LiteralPath (Join-Path $dist 'BUILD_ID'))) {
         if ($haPrecedente) { Remove-Item -LiteralPath $distPrec -Recurse -Force -ErrorAction SilentlyContinue }
-        $head = ''
-        if ($Git) { $head = Git-Out @('rev-parse', 'HEAD') }
-        Scrivi-File $FileUltimaBuild $head
+        Scrivi-File $FileUltimaBuild (Impronta-Codice)
         return $true
     }
 
@@ -494,35 +549,53 @@ try {
     }
 
     $modo = 'manuale'
-    if ($PrimoCollegamento) { $modo = 'primo collegamento' } elseif ($DaLauncher) { $modo = 'avvio del programma' }
+    if ($PrimoCollegamento) { $modo = 'primo collegamento' }
+    elseif ($SoloAvvio) { $modo = 'apertura del programma (nessun download)' }
+    elseif ($DaLauncher) { $modo = 'pulsante Sincronizza con GitHub' }
     Scrivi-Log '=============================================================='
     Scrivi-Log ('Aggiornamento - modalita'': ' + $modo + ' - cartella: ' + $Cartella)
     Scrivi-Log ('git: ' + $Git + ' | node: ' + $Node + ' | npm: ' + $NpmCli)
 
     if (Test-Path -LiteralPath $FileExeVecchio) { Remove-Item -LiteralPath $FileExeVecchio -Force -ErrorAction SilentlyContinue }
+    if (-not $SoloAvvio) { $script:ScriviEsito = $true }
 
     if (Porta-Occupata $Porta) {
+        Imposta-Esito 'programma-aperto' 'Il programma era aperto.'
         Mostra-Avviso 'Il programma risulta gia'' aperto: chiudilo e riprova ad aggiornare.'
         if ($DaLauncher) { exit 0 } else { exit 3 }
     }
 
-    if (-not $Git) {
-        Mostra-Avviso 'Git non trovato: aggiornamento automatico non disponibile.'
+    if ($SoloAvvio) {
+        Scrivi-Log 'Apertura del programma: nessun download da GitHub'
+    } elseif (-not $Git) {
+        Imposta-Esito 'errore' 'Git non trovato su questo PC.'
+        Mostra-Avviso 'Git non trovato: aggiornamento non disponibile.'
     } elseif (Prepara-Repository) {
         if (Scarica-Aggiornamenti) {
             $script:Nuovo = Git-Out @('rev-parse', '--verify', '-q', ('refs/remotes/origin/' + $Ramo))
             $script:Vecchio = Git-Out @('rev-parse', '--verify', '-q', 'HEAD')
             Scrivi-Log ('Versione installata: ' + $script:Vecchio + ' | su GitHub: ' + $script:Nuovo)
             if ($script:Nuovo -and ($script:Nuovo -ne $script:Vecchio)) {
-                if (-not $Forza -and -not $PrimoCollegamento -and ((Leggi-File $FileScartata) -eq $script:Nuovo)) {
+                # storia diversa da quella di GitHub: prima sincronizzazione di questo PC
+                if ($script:Vecchio -and -not $script:PrimaVolta -and -not (Git-Out @('merge-base', $script:Vecchio, $script:Nuovo))) {
+                    $script:PrimaVolta = $true
+                    Scrivi-Log 'Prima sincronizzazione (storia diversa da GitHub): copia completa e nessun ritorno alla vecchia versione'
+                }
+                if (-not $Forza -and -not $script:PrimaVolta -and ((Leggi-File $FileScartata) -eq $script:Nuovo)) {
+                    Imposta-Esito 'scartata' 'L''ultima versione non si era installata correttamente.'
                     Mostra-Avviso 'L''ultima versione non si era installata correttamente: resto sulla versione attuale.'
+                } elseif (Applica-Aggiornamento) {
+                    Imposta-Esito 'aggiornato' 'Programma aggiornato all''ultima versione.'
                 } else {
-                    $null = Applica-Aggiornamento
+                    Imposta-Esito 'non-riuscito' 'Installazione non riuscita: e'' rimasta la versione precedente.'
                 }
             }
         } else {
+            Imposta-Esito 'offline' 'GitHub non raggiungibile.'
             Mostra-Avviso 'GitHub non raggiungibile (manca internet?): uso la versione attuale.'
         }
+    } else {
+        Imposta-Esito 'errore' 'La cartella .git del programma non risulta valida.'
     }
 
     if ($PrimoCollegamento) { Imposta-IdFoglio }
@@ -532,24 +605,28 @@ try {
             Mostra-Avviso 'Node.js non trovato: impossibile preparare il programma.'
             $CodiceUscita = 2
         } elseif (-not (Compila)) {
-            if ($script:Aggiornato -and -not $PrimoCollegamento) {
+            if ($script:Aggiornato -and -not $script:PrimaVolta) {
                 Torna-Indietro
+                Imposta-Esito 'non-riuscito' 'Compilazione non riuscita: e'' tornata la versione precedente.'
                 if ((Serve-Compilare) -and -not (Compila)) { $CodiceUscita = 2 }
-            } elseif (-not (Test-Path -LiteralPath (Join-Path $Cartella '.next/BUILD_ID'))) {
-                $CodiceUscita = 2
+            } else {
+                if ($script:Aggiornato) { Imposta-Esito 'non-riuscito' 'Compilazione non riuscita: resta in uso la build precedente.' }
+                if (-not (Test-Path -LiteralPath (Join-Path $Cartella '.next/BUILD_ID'))) { $CodiceUscita = 2 }
             }
         }
     }
 
     if ($CodiceUscita -eq 0) {
-        if ($script:Aggiornato) { Mostra-Stato 'Programma aggiornato all''ultima versione.' }
+        if ($script:Esito -eq 'aggiornato') { Mostra-Stato 'Programma aggiornato all''ultima versione.' }
         else { Mostra-Stato 'Programma pronto.' }
     }
 } catch {
     Scrivi-Log ('ERRORE IMPREVISTO: ' + $_.Exception.Message + ' | ' + $_.ScriptStackTrace)
     Mostra-Avviso ('Errore durante l''aggiornamento: ' + $_.Exception.Message)
+    Imposta-Esito 'errore' ('Errore imprevisto: ' + $_.Exception.Message)
     $CodiceUscita = 1
 } finally {
+    Scrivi-Esito
     if ($lucchetto) { $lucchetto.Close() }
 }
 exit $CodiceUscita

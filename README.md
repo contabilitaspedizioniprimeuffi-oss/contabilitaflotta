@@ -9,10 +9,7 @@ Funziona in locale sul PC (Windows): i dati restano sul computer.
 
 Doppio clic su **`Banca Dati Automezzi.exe`** (o sul suo collegamento sul Desktop).
 
-All'avvio il programma:
-1. controlla se su GitHub c'è una versione più recente e, se c'è, la installa da solo;
-2. avvia il server locale;
-3. apre la finestra del programma (Microsoft Edge in modalità applicazione).
+All'avvio il programma prepara i file (li ricompila solo se servono), avvia il server locale e apre la finestra del programma (Microsoft Edge in modalità applicazione). All'apertura non scarica nulla da internet.
 
 Quando chiudi la finestra, il programma si ferma.
 
@@ -20,18 +17,22 @@ Se il programma non parte, usa **`avvia.bat`**: apre una finestra nera che mostr
 
 ---
 
-## 🔄 Aggiornamenti automatici
+## 🔄 Aggiornamenti: pulsante "Sincronizza con GitHub"
 
-Il codice del programma è su GitHub. Ogni modifica pubblicata lì arriva sul PC alla successiva apertura del programma.
+Il codice del programma è su GitHub. Le modifiche pubblicate lì si installano dal programma:
 
-- **I dati non vengono mai toccati.** Il database (`local_database.db`), `sheets_dump.txt`, `.env.local`, i backup e i registri sono esclusi da git (`.gitignore`). L'aggiornamento non li modifica e non li cancella.
+1. nella barra laterale premi **Sincronizza con GitHub** (un pallino verde segnala che ci sono novità);
+2. controlla l'elenco delle novità e premi **Scarica e installa**;
+3. il programma si chiude, si aggiorna e si riapre da solo (di solito ci vogliono 1-3 minuti).
+
+- **I dati non vengono mai toccati.** Il database (`local_database.db`), `sheets_dump.txt`, `.env.local`, i backup e i registri sono esclusi da git (`.gitignore`): l'aggiornamento non li modifica e non li cancella.
 - **Backup automatico.** Prima di ogni aggiornamento viene salvata una copia del database nella cartella `backup` (si tengono le ultime 20).
 - **Ritorno automatico.** Se una nuova versione non si installa o non si compila, il programma torna da solo alla versione precedente.
-- **Senza internet** il programma si apre normalmente con la versione già installata.
-- **Aggiornamento manuale:** doppio clic su `aggiorna-da-github.bat`.
+- **Prima sincronizzazione** (cartella copiata a mano o non ancora collegata): prima viene salvata una copia completa della cartella in `backup\prima-del-collegamento-<data>`.
+- **Senza aprire il programma:** doppio clic su `aggiorna-da-github.bat`, con il programma chiuso.
 - **Registri:** cartella `logs` (`aggiornamento.log`, `avvio.log`, `server.log`).
 
-La logica dell'aggiornamento è in `strumenti/aggiorna.ps1`.
+La logica dell'aggiornamento è in `strumenti/aggiorna.ps1`, il pulsante in `src/components/github-sync.tsx`.
 
 ---
 
