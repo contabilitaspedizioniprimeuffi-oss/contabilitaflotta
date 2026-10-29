@@ -1,0 +1,63 @@
+# =====================================================================
+#  DATI REALI E FILE LOCALI: NON devono MAI finire su GitHub.
+#  Git non li tocca mai durante gli aggiornamenti.
+# =====================================================================
+
+# Database del programma (SQLite) e file temporanei del database
+local_database.db
+local_database.db-*
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Vecchio database PGlite e altre cartelle dati
+data_db/
+local_db/
+
+# Copia locale del Foglio Google (contiene dati reali)
+sheets_dump.txt
+
+# Backup e registri creati dagli script di aggiornamento
+backup/
+logs/
+*.log
+*.tmp
+
+# File di stato dell'aggiornamento automatico
+strumenti/.ultima-build
+strumenti/.versione-scartata
+*.exe.old
+
+# Impostazioni locali e credenziali
+.env
+.env*.local
+*.key
+*.pem
+
+# Excel, CSV ed esportazioni
+*.xls
+*.xlsx
+*.csv
+export/
+
+# =====================================================================
+#  File generati (si ricreano da soli)
+# =====================================================================
+node_modules/
+/.pnp
+.pnp.js
+.next/
+.next_precedente/
+out/
+*.tsbuildinfo
+next-env.d.ts
+
+# Sistema operativo / editor
+Thumbs.db
+.DS_Store
+desktop.ini
+.vscode/
+.idea/

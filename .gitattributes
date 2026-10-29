@@ -1,0 +1,14 @@
+# Fine riga normalizzati nel repository
+* text=auto
+
+# Gli script di Windows devono avere fine riga Windows (CRLF)
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# File binari
+*.exe binary
+*.ico binary
+*.png binary
+*.jpg binary
+*.db binary
