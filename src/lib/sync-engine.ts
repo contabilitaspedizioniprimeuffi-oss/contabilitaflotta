@@ -62,8 +62,8 @@ export async function syncFromSheetData(rawText?: string): Promise<SyncResult> {
   let text = rawText;
 
   // 1. Prova a scaricare dal vivo se non fornito.
-  //    L'ID del Foglio Google sta nel file locale .env.local (GOOGLE_SHEET_ID=...)
-  //    e non nel codice, così non viene pubblicato su GitHub.
+  //    L'ID del Foglio Google sta nel file .env della cartella del programma
+  //    (GOOGLE_SHEET_ID=...), non nel codice.
   const spreadsheetId = process.env.GOOGLE_SHEET_ID?.trim();
   if (!text && spreadsheetId) {
     try {

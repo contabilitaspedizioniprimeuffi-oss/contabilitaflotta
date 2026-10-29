@@ -41,7 +41,7 @@ La logica dell'aggiornamento è in `strumenti/aggiorna.ps1`, il pulsante in `src
 - Il database è un file **SQLite** nella cartella del programma: **`local_database.db`**.
 - Le tabelle vengono create automaticamente se mancano (`src/db/index.ts`).
 - La sincronizzazione legge la copia locale del Foglio Google **`sheets_dump.txt`**. Il file contiene dati reali e non viene mai pubblicato su GitHub.
-- L'ID del Foglio Google si imposta nel file locale **`.env.local`** (non pubblicato):
+- L'ID del Foglio Google sta nel file **`.env`** della cartella del programma (non va tenuto su GitHub; gli aggiornamenti non lo cancellano):
   ```
   GOOGLE_SHEET_ID=...
   ```
