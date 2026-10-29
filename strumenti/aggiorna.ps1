@@ -426,7 +426,8 @@ function Applica-Aggiornamento {
     }
 
     # il programma di avvio in uso non si puo' sovrascrivere: lo si rinomina
-    if ($cambiati -contains $NomeExe) {
+    # (sempre, se la cartella non era ancora collegata: git riscrive tutti i file)
+    if ((-not $vecchio) -or ($cambiati -contains $NomeExe)) {
         $exe = Join-Path $Cartella $NomeExe
         if (Test-Path -LiteralPath $exe) {
             Remove-Item -LiteralPath $FileExeVecchio -Force -ErrorAction SilentlyContinue
@@ -576,10 +577,10 @@ try {
             $script:Vecchio = Git-Out @('rev-parse', '--verify', '-q', 'HEAD')
             Scrivi-Log ('Versione installata: ' + $script:Vecchio + ' | su GitHub: ' + $script:Nuovo)
             if ($script:Nuovo -and ($script:Nuovo -ne $script:Vecchio)) {
-                # storia diversa da quella di GitHub: prima sincronizzazione di questo PC
-                if ($script:Vecchio -and -not $script:PrimaVolta -and -not (Git-Out @('merge-base', $script:Vecchio, $script:Nuovo))) {
+                # cartella mai collegata o con storia diversa da GitHub: prima sincronizzazione di questo PC
+                if (-not $script:PrimaVolta -and ((-not $script:Vecchio) -or -not (Git-Out @('merge-base', $script:Vecchio, $script:Nuovo)))) {
                     $script:PrimaVolta = $true
-                    Scrivi-Log 'Prima sincronizzazione (storia diversa da GitHub): copia completa e nessun ritorno alla vecchia versione'
+                    Scrivi-Log 'Prima sincronizzazione (cartella non collegata o storia diversa da GitHub): copia completa e nessun ritorno alla vecchia versione'
                 }
                 if (-not $Forza -and -not $script:PrimaVolta -and ((Leggi-File $FileScartata) -eq $script:Nuovo)) {
                     Imposta-Esito 'scartata' 'L''ultima versione non si era installata correttamente.'
