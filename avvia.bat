@@ -1,23 +1,12 @@
 @echo off
-title Banca Dati Automezzi
-echo ========================================================
-echo        AVVIO BANCA DATI AUTOMEZZI AZIENDALI
-echo ========================================================
-echo.
-
+title Banca Dati Automezzi (modalita' console)
 cd /d "%~dp0"
 set "PATH=%LOCALAPPDATA%\Programs\nodejs;%LOCALAPPDATA%\Programs\Git\cmd;%PATH%"
-
-echo Controllo ambiente...
-if not exist node_modules (
-    echo Installazione dipendenze in corso...
-    call npm install
-)
-
+echo ========================================================
+echo        BANCA DATI AUTOMEZZI - modalita' console
+echo ========================================================
 echo.
-echo Avvio del server su http://localhost:3000 ...
-echo Per fermare il server premi CTRL + C in questa finestra.
+echo Di solito basta aprire "Banca Dati Automezzi.exe".
+echo Questa finestra serve se il programma non parte: mostra gli errori.
 echo.
-
-start "" "http://localhost:3000"
-npm start || npm run dev
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0strumenti\aggiorna.ps1" -Manuale & echo. & echo Avvio del server su http://localhost:3000 - per fermarlo chiudi questa finestra. & echo. & start "" "http://localhost:3000" & call npm start || call npm run dev
