@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { db, ensureSchema } from "./index";
-import { deadlines, fines, maintenances, refuels, vehicles } from "./schema";
+import { deadlines, driverLogs, fines, maintenances, refuels, vehicles } from "./schema";
 
 // ---------------------------------------------------------------------------
 // Utility
@@ -32,6 +32,7 @@ async function main() {
   await db.delete(refuels);
   await db.delete(maintenances);
   await db.delete(deadlines);
+  await db.delete(driverLogs);
   await db.delete(vehicles);
 
   const fleet = [
@@ -47,6 +48,7 @@ async function main() {
         inizio: d(-700),
         fine: d(395),
         canone: 459,
+        kmMassimi: 58000, // al ritmo attuale rischia di superarli
       },
       carburante: "diesel",
       stato: "attivo",
@@ -88,6 +90,7 @@ async function main() {
         inizio: d(-320),
         fine: d(740),
         canone: 389,
+        kmMassimi: 90000, // ampiamente nel limite
       },
       carburante: "ibrido",
       stato: "attivo",
@@ -181,6 +184,7 @@ async function main() {
         inizio: d(-800),
         fine: d(290),
         canone: 495,
+        kmMassimi: 72000, // limite già superato
       },
       carburante: "diesel",
       stato: "attivo",
@@ -222,6 +226,7 @@ async function main() {
         inizio: d(-1420),
         fine: d(38), // FINE NOLEGGIO VICINA
         canone: 349,
+        kmMassimi: 120000,
       },
       carburante: "diesel",
       stato: "attivo",
@@ -255,6 +260,7 @@ async function main() {
         dataInizioNoleggio: v.noleggio?.inizio ?? null,
         dataFineNoleggio: v.noleggio?.fine ?? null,
         canoneMensile: v.noleggio ? eur(v.noleggio.canone) : null,
+        kmMassimiContratto: v.noleggio?.kmMassimi ?? null,
         carburante: v.carburante,
         stato: v.stato,
         conducente: v.conducente,
@@ -270,6 +276,7 @@ async function main() {
   // -------------------------------------------------------------------------
   console.log("Inserimento rifornimenti...");
   const { sql } = await import("drizzle-orm");
+  const kmFinali: number[] = fleet.map((v) => v.kmStart);
 
   for (let i = 0; i < fleet.length; i++) {
     const v = fleet[i];
@@ -297,9 +304,10 @@ async function main() {
     }
 
     // aggiorna km attuali del mezzo
+    kmFinali[i] = km + Math.round(rnd(80, 420));
     await db
       .update(vehicles)
-      .set({ kmAttuali: km + Math.round(rnd(80, 420)) })
+      .set({ kmAttuali: kmFinali[i] })
       .where(sql`${vehicles.id} = ${ids[i]}`);
   }
 
@@ -414,6 +422,29 @@ async function main() {
             ? "Fine contratto vicina: decidere rinnovo/sostituzione"
             : "Fine contratto di noleggio",
       });
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Diario autisti mensile (ultimi 3 mesi) per i furgoni a noleggio
+  // -------------------------------------------------------------------------
+  console.log("Inserimento diario autisti...");
+  const oggi = new Date();
+  for (const i of [0, 7, 9]) {
+    const v = fleet[i];
+    let fine = kmFinali[i];
+    for (let k = 0; k < 3; k++) {
+      const mese = new Date(oggi.getFullYear(), oggi.getMonth() - k, 1);
+      const percorsi = Math.round(rnd(1500, 2300));
+      await db.insert(driverLogs).values({
+        vehicleId: ids[i],
+        data: `${mese.getFullYear()}-${String(mese.getMonth() + 1).padStart(2, "0")}-01`,
+        conducente: v.conducente ?? "Autista",
+        kmInizio: fine - percorsi,
+        kmFine: fine,
+        note: k === 0 ? "Mese in corso" : null,
+      });
+      fine -= percorsi;
     }
   }
 

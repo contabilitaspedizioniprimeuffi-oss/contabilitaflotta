@@ -7,7 +7,8 @@ import {
   salvaCopiaLocale,
   scaricaFoglio,
 } from "@/lib/foglio-google";
-import { deadlines, refuels, vehicles } from "@/db/schema";
+import { refuels, vehicles } from "@/db/schema";
+import { allineaScadenzaNoleggio } from "@/lib/scadenza-noleggio";
 import { eq } from "drizzle-orm";
 
 export interface SyncResult {
@@ -24,13 +25,12 @@ export interface SyncResult {
 
 function parseItalianDate(s: string | null | undefined): string | null {
   if (!s) return null;
-  const parts = s.trim().split("/");
-  if (parts.length === 3) {
-    let [d, m, y] = parts;
-    if (y.length === 2) y = "20" + y;
-    return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
-  }
-  return null;
+  const m = s.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);
+  if (!m) return null;
+  const [, d, mese, anno] = m;
+  const y = anno.length === 2 ? "20" + anno : anno;
+  if (Number(mese) < 1 || Number(mese) > 12 || Number(d) < 1 || Number(d) > 31) return null;
+  return `${y}-${mese.padStart(2, "0")}-${d.padStart(2, "0")}`;
 }
 
 function parseItalianInt(s: string | number | null | undefined): number {
@@ -134,6 +134,8 @@ export async function syncFromSheetData(rawText?: string): Promise<SyncResult> {
     targa: string;
     tipo: string;
     scadenza: string | null;
+    /** inizio contratto, dalla scheda della targa (colonna INIZIO) */
+    inizio?: string | null;
     litriTotali: number;
     ultimiKm: number;
     noteMezzo?: string;
@@ -159,11 +161,15 @@ export async function syncFromSheetData(rawText?: string): Promise<SyncResult> {
     });
   }
 
-  // Per ciascun veicolo, estrai note mezzo dall'intestazione del foglio singolo
+  // Per ciascun veicolo, dall'intestazione del foglio singolo (TIPO | INIZIO | SCADENZA | NOTE MEZZO):
+  // inizio contratto, scadenza (se manca nel RIEPILOGO) e note mezzo
   for (const [targa, meta] of vehiclesMeta.entries()) {
     const sheetRows = sheets[targa];
     if (sheetRows && sheetRows.length >= 3) {
       const headerRow = sheetRows[2]?.split("\t") ?? [];
+      const inizio = parseItalianDate(headerRow[1]);
+      if (inizio) meta.inizio = inizio;
+      if (!meta.scadenza) meta.scadenza = parseItalianDate(headerRow[2]);
       const noteMezzo = headerRow[3]?.trim();
       if (noteMezzo) meta.noteMezzo = noteMezzo;
     }
@@ -209,7 +215,10 @@ export async function syncFromSheetData(rawText?: string): Promise<SyncResult> {
         .set({
           tipoAcquisizione,
           kmAttuali: meta.ultimiKm > 0 ? meta.ultimiKm : existing[0].kmAttuali,
-          dataFineNoleggio: meta.scadenza,
+          // una cella vuota nel Foglio non cancella le date scritte nel programma
+          dataFineNoleggio: meta.scadenza ?? existing[0].dataFineNoleggio,
+          dataInizioNoleggio:
+            tipoAcquisizione === "noleggio" && meta.inizio ? meta.inizio : existing[0].dataInizioNoleggio,
           stato: "attivo",
           categoria: "furgone",
           carburante: "diesel",
@@ -229,6 +238,7 @@ export async function syncFromSheetData(rawText?: string): Promise<SyncResult> {
           kmAttuali: meta.ultimiKm,
           stato: "attivo",
           dataFineNoleggio: meta.scadenza,
+          dataInizioNoleggio: tipoAcquisizione === "noleggio" ? meta.inizio ?? null : null,
           note: meta.noteMezzo || null,
         })
         .returning({ id: vehicles.id });
@@ -237,16 +247,11 @@ export async function syncFromSheetData(rawText?: string): Promise<SyncResult> {
 
     totalVehicles++;
 
-    // Inserimento scadenza contratto noleggio
+    // Scadenza di fine contratto: si aggiorna solo quella di tipo "noleggio".
+    // (Prima venivano cancellate TUTTE le scadenze del mezzo, comprese assicurazione,
+    // bollo e revisione inserite a mano.)
     if (meta.scadenza) {
-      await db.delete(deadlines).where(eq(deadlines.vehicleId, vehicleId));
-      await db.insert(deadlines).values({
-        vehicleId,
-        tipo: "noleggio",
-        scadenza: meta.scadenza,
-        costo: null,
-        note: `Fine contratto noleggio flotta (${meta.tipo})`,
-      });
+      await allineaScadenzaNoleggio(vehicleId, meta.scadenza, `Fine contratto noleggio flotta (${meta.tipo})`);
       totalDeadlines++;
     }
 

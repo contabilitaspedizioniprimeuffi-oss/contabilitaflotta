@@ -1,10 +1,11 @@
 "use server";
 
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
 import { deadlines, driverLogs, fines, maintenances, refuels, vehicles } from "@/db/schema";
+import { dopoSalvataggioMezzo, riportaSulMezzo } from "@/lib/scadenza-noleggio";
 
 export type FormResult = { ok: boolean; error?: string; redirectTo?: string };
 
@@ -29,6 +30,14 @@ function num(fd: FormData, key: string): number | null {
 function int(fd: FormData, key: string): number | null {
   const n = num(fd, key);
   return n === null ? null : Math.round(n);
+}
+
+/** Km scritti anche all'italiana: "120.000", "120 000 km" → 120000 */
+function km(fd: FormData, key: string): number | null {
+  const s = str(fd, key);
+  if (!s) return null;
+  const n = parseInt(s.replace(/km/i, "").replace(/[.\s']/g, ""), 10);
+  return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
 function touch() {
@@ -80,6 +89,7 @@ function readVehicleForm(fd: FormData) {
     dataInizioNoleggio: (tipoAcquisizione === "noleggio" || tipoAcquisizione === "leasing") ? str(fd, "dataInizioNoleggio") : null,
     dataFineNoleggio: (tipoAcquisizione === "noleggio" || tipoAcquisizione === "leasing") ? str(fd, "dataFineNoleggio") : null,
     canoneMensile: (tipoAcquisizione === "noleggio" || tipoAcquisizione === "leasing") ? num(fd, "canoneMensile")?.toFixed(2) ?? null : null,
+    kmMassimiContratto: (tipoAcquisizione === "noleggio" || tipoAcquisizione === "leasing") ? (km(fd, "kmMassimiContratto") || null) : null,
   };
 
   return { values: base };
@@ -99,6 +109,7 @@ export async function createVehicle(_prev: FormResult, fd: FormData): Promise<Fo
   try {
     const [row] = await db.insert(vehicles).values(values).returning({ id: vehicles.id });
     id = row.id;
+    await dopoSalvataggioMezzo(id, values.dataFineNoleggio, null);
   } catch (e) {
     const msg = String(e);
     if (msg.includes("unique") || msg.includes("duplicate")) {
@@ -127,7 +138,13 @@ export async function updateVehicle(
   }
 
   try {
+    const [prima] = await db
+      .select({ dataFineNoleggio: vehicles.dataFineNoleggio })
+      .from(vehicles)
+      .where(eq(vehicles.id, vehicleId))
+      .limit(1);
     await db.update(vehicles).set(values!).where(eq(vehicles.id, vehicleId));
+    await dopoSalvataggioMezzo(vehicleId, values!.dataFineNoleggio, prima?.dataFineNoleggio ?? null);
   } catch (e) {
     const msg = String(e);
     if (msg.includes("unique") || msg.includes("duplicate")) {
@@ -324,7 +341,8 @@ export async function addDeadline(
   const { values, error } = readDeadlineForm(fd);
   if (error || !values) return { ok: false, error: error ?? "Dati non validi." };
 
-  await db.insert(deadlines).values({ vehicleId, ...values });
+  const [nuova] = await db.insert(deadlines).values({ vehicleId, ...values }).returning();
+  if (nuova && nuova.tipo === "noleggio") await riportaSulMezzo(nuova.id, vehicleId);
 
   touch();
   revalidatePath(`/mezzi/${vehicleId}`);
@@ -345,6 +363,7 @@ export async function updateDeadline(
     .where(eq(deadlines.id, deadlineId))
     .returning();
   if (!row) return { ok: false, error: "Scadenza non trovata." };
+  if (row.tipo === "noleggio") await riportaSulMezzo(row.id, row.vehicleId);
 
   touch();
   revalidatePath(`/mezzi/${row.vehicleId}`);
@@ -467,23 +486,43 @@ export async function addDriverLog(
   _prev: FormResult,
   fd: FormData
 ): Promise<FormResult> {
-  const data = str(fd, "data");
+  // Diario mensile: il mese ("2026-10") si salva come primo giorno del mese ("2026-10-01").
+  // Le vecchie registrazioni giornaliere restano valide e compaiono nel loro mese.
+  const mese = str(fd, "mese");
+  const data = mese && /^\d{4}-\d{2}$/.test(mese) ? `${mese}-01` : str(fd, "data");
   const conducente = str(fd, "conducente");
-  const kmInizio = int(fd, "kmInizio");
-  const kmFine = int(fd, "kmFine");
+  const kmInizio = km(fd, "kmInizio");
+  const kmFine = km(fd, "kmFine");
+  const note = str(fd, "note");
 
   if (!data || !conducente) {
-    return { ok: false, error: "Data e conducente sono obbligatori." };
+    return { ok: false, error: "Mese e autista sono obbligatori." };
+  }
+  if (kmInizio !== null && kmFine !== null && kmFine < kmInizio) {
+    return { ok: false, error: "I km di fine mese non possono essere inferiori a quelli di inizio mese." };
   }
 
-  await db.insert(driverLogs).values({
-    vehicleId,
-    data,
-    conducente,
-    kmInizio,
-    kmFine,
-    note: str(fd, "note"),
-  });
+  // Stesso autista già registrato in quel mese: si aggiornano i dati invece di creare un doppione
+  const stessoMese = await db
+    .select()
+    .from(driverLogs)
+    .where(and(eq(driverLogs.vehicleId, vehicleId), eq(driverLogs.data, data)));
+  const esistente = stessoMese.find(
+    (l) => l.conducente.trim().toLowerCase() === conducente.toLowerCase()
+  );
+
+  if (esistente) {
+    await db
+      .update(driverLogs)
+      .set({
+        kmInizio: kmInizio ?? esistente.kmInizio,
+        kmFine: kmFine ?? esistente.kmFine,
+        note: note ?? esistente.note,
+      })
+      .where(eq(driverLogs.id, esistente.id));
+  } else {
+    await db.insert(driverLogs).values({ vehicleId, data, conducente, kmInizio, kmFine, note });
+  }
 
   if (kmFine) await bumpKmIfNeeded(vehicleId, kmFine);
 

@@ -288,6 +288,21 @@ export default function VehicleForm({
                 defaultValue={initial?.dataFineNoleggio ?? undefined}
               />
             </Field>
+            <Field label="Km massimi da contratto">
+              <input
+                className="input font-mono"
+                type="text"
+                inputMode="numeric"
+                name="kmMassimiContratto"
+                placeholder="Es. 120.000"
+                defaultValue={
+                  initial?.kmMassimiContratto
+                    ? new Intl.NumberFormat("it-IT").format(initial.kmMassimiContratto)
+                    : undefined
+                }
+              />
+              <p className="mt-1 text-[11px] text-mute">Limite di km previsto dal contratto (contachilometri).</p>
+            </Field>
           </>
         )}
 

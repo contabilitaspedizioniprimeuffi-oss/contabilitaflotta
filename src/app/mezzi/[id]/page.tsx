@@ -48,7 +48,7 @@ import {
   StatCard,
 } from "@/components/ui";
 import VTabs, { type Pane } from "@/components/vtabs";
-import type { Maintenance, Vehicle } from "@/db/schema";
+import type { Maintenance, Refuel, Vehicle } from "@/db/schema";
 import {
   deleteDeadline,
   deleteMaintenance,
@@ -57,9 +57,11 @@ import {
 } from "@/lib/actions";
 import { computeConsumption, getVehicleBundle, nextServiceInfo } from "@/lib/data";
 import {
+  DAY_MS,
   fmtDate,
   fmtDateLong,
   fmtEur,
+  fmtMese,
   fmtNum,
   daysUntil,
   ACQ_LABEL,
@@ -108,6 +110,59 @@ function DateBlock({ iso }: { iso: string }) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Km massimi del contratto (noleggio / leasing)
+// ---------------------------------------------------------------------------
+const GIORNI_MESE = 30.44;
+
+type KmContratto = {
+  massimi: number;
+  attuali: number;
+  /** negativo = limite superato */
+  rimanenti: number;
+  pct: number;
+  /** media km/mese ancora disponibile fino a fine contratto */
+  kmMeseDisponibili: number | null;
+  /** km/mese percorsi di recente (dai rifornimenti degli ultimi 4 mesi) */
+  ritmoMese: number | null;
+  /** km stimati a fine contratto mantenendo il ritmo recente */
+  stimaFine: number | null;
+};
+
+function ritmoKmMensile(refs: Refuel[]): number | null {
+  const limite = new Date(Date.now() - 120 * DAY_MS).toISOString().slice(0, 10);
+  const recenti = refs
+    .filter((r) => r.data >= limite && r.km > 0)
+    .sort((a, b) => a.data.localeCompare(b.data));
+  if (recenti.length < 2) return null;
+  const primo = recenti[0];
+  const ultimo = recenti[recenti.length - 1];
+  const giorni =
+    (new Date(`${ultimo.data}T00:00:00`).getTime() - new Date(`${primo.data}T00:00:00`).getTime()) / DAY_MS;
+  const km = ultimo.km - primo.km;
+  if (giorni < 20 || km <= 0) return null;
+  const ritmo = (km / giorni) * GIORNI_MESE;
+  return ritmo > 25000 ? null : ritmo; // valori impossibili = km scritti male nel registro
+}
+
+function calcolaKmContratto(v: Vehicle, refs: Refuel[], giorniAllaFine: number | null): KmContratto | null {
+  const massimi = v.kmMassimiContratto;
+  if (!massimi || massimi <= 0) return null;
+  const attuali = v.kmAttuali;
+  const rimanenti = massimi - attuali;
+  const mesiRimanenti = giorniAllaFine !== null && giorniAllaFine > 0 ? giorniAllaFine / GIORNI_MESE : null;
+  const ritmoMese = ritmoKmMensile(refs);
+  return {
+    massimi,
+    attuali,
+    rimanenti,
+    pct: attuali / massimi,
+    kmMeseDisponibili: mesiRimanenti !== null && rimanenti > 0 ? rimanenti / Math.max(1, mesiRimanenti) : null,
+    ritmoMese,
+    stimaFine: mesiRimanenti !== null && ritmoMese !== null ? Math.round(attuali + ritmoMese * mesiRimanenti) : null,
+  };
+}
+
 export default async function SchedaMezzo(props: { params: Promise<{ id: string }> }) {
   const { id } = await props.params;
   const vid = Number(id);
@@ -131,14 +186,20 @@ export default async function SchedaMezzo(props: { params: Promise<{ id: string 
   const importoDaPagare = multeDaPagare.reduce((s, f) => s + Number(f.importo), 0);
   const puntiTotali = fns.reduce((s, f) => s + (f.punti ?? 0), 0);
 
+  // Scadenza del contratto (noleggio e leasing): i giorni mancanti bastano la data di fine,
+  // per la barra di avanzamento serve anche la data di inizio.
+  const conContratto = v.tipoAcquisizione === "noleggio" || v.tipoAcquisizione === "leasing";
   let contractPct: number | null = null;
   let contractDays: number | null = null;
-  if (v.tipoAcquisizione === "noleggio" && v.dataInizioNoleggio && v.dataFineNoleggio) {
-    const start = new Date(`${v.dataInizioNoleggio}T00:00:00`).getTime();
-    const end = new Date(`${v.dataFineNoleggio}T00:00:00`).getTime();
-    contractPct = (Date.now() - start) / Math.max(1, end - start);
+  if (conContratto && v.dataFineNoleggio) {
     contractDays = daysUntil(v.dataFineNoleggio);
+    if (v.dataInizioNoleggio) {
+      const start = new Date(`${v.dataInizioNoleggio}T00:00:00`).getTime();
+      const end = new Date(`${v.dataFineNoleggio}T00:00:00`).getTime();
+      contractPct = (Date.now() - start) / Math.max(1, end - start);
+    }
   }
+  const kmContratto = conContratto ? calcolaKmContratto(v, refs, contractDays) : null;
 
   const refsDesc = [...refs].reverse();
 
@@ -217,7 +278,13 @@ export default async function SchedaMezzo(props: { params: Promise<{ id: string 
       label: "Panoramica",
       icon: "info",
       content: (
-        <PanoramicaTab v={v} contractPct={contractPct} contractDays={contractDays} service={service} />
+        <PanoramicaTab
+          v={v}
+          contractPct={contractPct}
+          contractDays={contractDays}
+          kmContratto={kmContratto}
+          service={service}
+        />
       ),
     },
     {
@@ -331,37 +398,60 @@ export default async function SchedaMezzo(props: { params: Promise<{ id: string 
       icon: "user",
       count: logs.length,
       content: (
-        <SectionCard title="Cronologia conducenti giornalieri" pad={false}>
+        <SectionCard title="Autisti e km del mese" pad={false}>
           {logs.length === 0 ? (
             <div className="p-5">
-              <Empty icon={User} title="Nessun autista registrato" sub="Registra il conducente della giornata per questo mezzo." />
+              <Empty
+                icon={User}
+                title="Nessun autista registrato"
+                sub="Registra l'autista del mese con i km di inizio e fine mese."
+              />
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[720px]">
+              <table className="w-full min-w-[760px]">
                 <thead>
                   <tr className="border-b border-line">
-                    <th className="th">Data</th>
+                    <th className="th">Mese</th>
                     <th className="th">Autista</th>
-                    <th className="th text-right">Km Inizio</th>
-                    <th className="th text-right">Km Fine</th>
+                    <th className="th text-right">Km inizio mese</th>
+                    <th className="th text-right">Km fine mese</th>
+                    <th className="th text-right">Km percorsi</th>
                     <th className="th">Note</th>
                     <th className="th" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-line">
-                  {logs.map((log) => (
-                    <tr key={log.id} className="transition-colors hover:bg-paper/60">
-                      <td className="td font-semibold">{fmtDate(log.data)}</td>
-                      <td className="td font-bold">{log.conducente}</td>
-                      <td className="td text-right font-mono text-xs">{fmtNum(log.kmInizio)}</td>
-                      <td className="td text-right font-mono text-xs font-bold">{fmtNum(log.kmFine)}</td>
-                      <td className="td text-xs text-mute italic">{log.note ?? "—"}</td>
-                      <td className="td text-right">
-                        <DeleteDriverLogButton id={log.id} />
-                      </td>
-                    </tr>
-                  ))}
+                  {logs.map((log) => {
+                    const percorsi =
+                      log.kmInizio !== null && log.kmFine !== null && log.kmFine >= log.kmInizio
+                        ? log.kmFine - log.kmInizio
+                        : null;
+                    // registrazioni fatte quando il diario era giornaliero
+                    const giornaliera = log.data.slice(8, 10) !== "01";
+                    return (
+                      <tr key={log.id} className="transition-colors hover:bg-paper/60">
+                        <td className="td font-semibold">
+                          <span className="capitalize">{fmtMese(log.data)}</span>
+                          {giornaliera ? (
+                            <span className="block text-[11px] font-normal text-mute">
+                              registrazione del {fmtDate(log.data)}
+                            </span>
+                          ) : null}
+                        </td>
+                        <td className="td font-bold">{log.conducente}</td>
+                        <td className="td text-right font-mono text-xs">{fmtNum(log.kmInizio)}</td>
+                        <td className="td text-right font-mono text-xs">{fmtNum(log.kmFine)}</td>
+                        <td className="td text-right font-mono text-xs font-bold">
+                          {percorsi !== null ? `${fmtNum(percorsi)} km` : "—"}
+                        </td>
+                        <td className="td text-xs text-mute italic">{log.note ?? "—"}</td>
+                        <td className="td text-right">
+                          <DeleteDriverLogButton id={log.id} />
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -595,7 +685,7 @@ export default async function SchedaMezzo(props: { params: Promise<{ id: string 
           <AddMaintenanceDialog vehicleId={v.id} />
           <AddDeadlineDialog vehicleId={v.id} />
           <AddFineDialog vehicleId={v.id} />
-          <AddDriverLogDialog vehicleId={v.id} />
+          <AddDriverLogDialog vehicleId={v.id} kmInizioSuggeriti={logs.find((l) => l.kmFine !== null)?.kmFine ?? null} />
           <Link href={`/mezzi/${v.id}/modifica`} className="btn-ghost h-11!">
             <Pencil className="h-4 w-4" /> Modifica anagrafica
           </Link>
@@ -604,7 +694,19 @@ export default async function SchedaMezzo(props: { params: Promise<{ id: string 
 
       {/* KPI scheda */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">
-        <StatCard icon={Gauge} label="Km attuali" value={fmtNum(v.kmAttuali)} sub="all'ultimo rilevamento" />
+        <StatCard
+          icon={Gauge}
+          label="Km attuali"
+          value={fmtNum(v.kmAttuali)}
+          tone={kmContratto && kmContratto.rimanenti < 0 ? "red" : "ink"}
+          sub={
+            kmContratto
+              ? kmContratto.rimanenti >= 0
+                ? `restano ${fmtNum(kmContratto.rimanenti)} km su ${fmtNum(kmContratto.massimi)}`
+                : `limite di ${fmtNum(kmContratto.massimi)} km superato`
+              : "all'ultimo rilevamento"
+          }
+        />
         <StatCard
           icon={Fuel}
           label="Consumo medio"
@@ -645,13 +747,22 @@ function PanoramicaTab({
   v,
   contractPct,
   contractDays,
+  kmContratto: km,
   service,
 }: {
   v: Vehicle;
   contractPct: number | null;
   contractDays: number | null;
+  kmContratto: KmContratto | null;
   service: { kmRimanenti: number; prossimoKm: number; base: Maintenance } | null;
 }) {
+  const kmTone: "red" | "amber" | "volt" = !km
+    ? "volt"
+    : km.rimanenti < 0
+      ? "red"
+      : km.pct >= 0.9 || (km.stimaFine !== null && km.stimaFine > km.massimi)
+        ? "amber"
+        : "volt";
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
       {/* Acquisizione */}
@@ -669,6 +780,13 @@ function PanoramicaTab({
                 <span className="font-mono font-bold">{fmtEur(v.canoneMensile)}</span>
               </Row>
               <Row label="Scadenza">{fmtDate(v.dataFineNoleggio)}</Row>
+              <Row label="Km massimi">
+                {v.kmMassimiContratto ? (
+                  <span className="font-mono font-bold">{fmtNum(v.kmMassimiContratto)} km</span>
+                ) : (
+                  <span className="font-normal text-mute">non indicati</span>
+                )}
+              </Row>
             </>
           )}
 
@@ -687,21 +805,64 @@ function PanoramicaTab({
           )}
         </div>
 
-        {contractPct !== null && contractDays !== null ? (
+        {contractDays !== null ? (
           <div className="mt-4 rounded-2xl bg-paper p-4">
             <div className="mb-2 flex items-center justify-between">
               <span className="text-[11px] font-bold uppercase tracking-wide text-mute">
-                Avanzamento contratto
+                {contractPct !== null ? "Avanzamento contratto" : "Scadenza contratto"}
               </span>
               <DueChip days={contractDays} />
             </div>
-            <Progress
-              pct={contractPct}
-              tone={contractDays <= 45 ? "red" : contractDays <= 90 ? "amber" : "volt"}
-            />
+            {contractPct !== null ? (
+              <>
+                <Progress
+                  pct={contractPct}
+                  tone={contractDays <= 45 ? "red" : contractDays <= 90 ? "amber" : "volt"}
+                />
+                <p className="mt-2 font-mono text-[11px] text-mute">
+                  {Math.round(Math.min(1, Math.max(0, contractPct)) * 100)}% del periodo trascorso
+                </p>
+              </>
+            ) : (
+              <p className="font-mono text-[11px] text-mute">
+                Termina il {fmtDateLong(v.dataFineNoleggio)}
+              </p>
+            )}
+          </div>
+        ) : null}
+
+        {km ? (
+          <div className="mt-4 rounded-2xl bg-paper p-4">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <span className="text-[11px] font-bold uppercase tracking-wide text-mute">Km del contratto</span>
+              {km.rimanenti < 0 ? (
+                <Pill tone="red">Superati di {fmtNum(-km.rimanenti)} km</Pill>
+              ) : km.stimaFine !== null && km.stimaFine > km.massimi ? (
+                <Pill tone="amber">Rischio supero</Pill>
+              ) : km.pct >= 0.9 ? (
+                <Pill tone="amber">Vicino al limite</Pill>
+              ) : (
+                <Pill tone="volt">Entro il limite</Pill>
+              )}
+            </div>
+            <Progress pct={km.pct} tone={kmTone} />
             <p className="mt-2 font-mono text-[11px] text-mute">
-              {Math.round(Math.min(1, Math.max(0, contractPct)) * 100)}% del periodo trascorso
+              {fmtNum(km.attuali)} di {fmtNum(km.massimi)} km ({Math.round(km.pct * 100)}%)
+              {km.rimanenti >= 0 ? ` · restano ${fmtNum(km.rimanenti)} km` : ""}
             </p>
+            {km.kmMeseDisponibili !== null ? (
+              <p className="mt-1.5 text-xs text-mute">
+                Fino a fine contratto: in media{" "}
+                <span className="font-bold text-ink-950">{fmtNum(Math.round(km.kmMeseDisponibili))} km al mese</span>
+              </p>
+            ) : null}
+            {km.stimaFine !== null && km.ritmoMese !== null ? (
+              <p className={`mt-1 text-xs ${km.stimaFine > km.massimi ? "font-semibold text-danger" : "text-mute"}`}>
+                Al ritmo attuale (circa {fmtNum(Math.round(km.ritmoMese))} km al mese) a fine contratto: circa{" "}
+                {fmtNum(km.stimaFine)} km
+                {km.stimaFine > km.massimi ? ` · supero stimato ${fmtNum(km.stimaFine - km.massimi)} km` : ""}
+              </p>
+            ) : null}
           </div>
         ) : null}
       </SectionCard>

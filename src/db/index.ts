@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS vehicles (
   data_inizio_noleggio TEXT,
   data_fine_noleggio TEXT,
   canone_mensile TEXT,
+  km_massimi_contratto INTEGER,
   carburante TEXT NOT NULL DEFAULT 'diesel',
   km_attuali INTEGER NOT NULL DEFAULT 0,
   stato TEXT NOT NULL DEFAULT 'attivo',
@@ -97,8 +98,74 @@ CREATE TABLE IF NOT EXISTS fines (
 );
 `;
 
-export async function ensureSchema() {
+// Colonne aggiunte dopo la prima versione: nei database già esistenti (quello del PC
+// con i dati veri) vengono aggiunte all'avvio, senza toccare i dati presenti.
+const COLONNE_AGGIUNTE: { tabella: string; colonna: string; tipo: string }[] = [
+  { tabella: "vehicles", colonna: "km_massimi_contratto", tipo: "INTEGER" },
+];
+
+// Sistemazioni dei dati da fare una volta sola (ricordate nella tabella "migrazioni").
+// Ogni sistemazione è eseguita tutta insieme: se qualcosa va storto non cambia nulla.
+const SISTEMAZIONI: { nome: string; istruzioni: string[] }[] = [
+  {
+    // La data di fine contratto scritta nella scheda del mezzo non veniva riportata
+    // nell'elenco Scadenze (che è quello letto dalla Panoramica): si riallinea.
+    nome: "2026-10-allinea-scadenze-noleggio",
+    istruzioni: [
+      `INSERT INTO deadlines (vehicle_id, tipo, scadenza, note)
+       SELECT v.id, 'noleggio', v.data_fine_noleggio, 'Fine contratto di noleggio'
+       FROM vehicles v
+       WHERE v.tipo_acquisizione IN ('noleggio', 'leasing')
+         AND COALESCE(v.data_fine_noleggio, '') <> ''
+         AND NOT EXISTS (SELECT 1 FROM deadlines d WHERE d.vehicle_id = v.id AND d.tipo = 'noleggio')`,
+      `UPDATE deadlines
+       SET scadenza = (SELECT v.data_fine_noleggio FROM vehicles v WHERE v.id = deadlines.vehicle_id)
+       WHERE id IN (
+           SELECT MIN(d.id) FROM deadlines d JOIN vehicles v ON v.id = d.vehicle_id
+           WHERE d.tipo = 'noleggio'
+             AND v.tipo_acquisizione IN ('noleggio', 'leasing')
+             AND COALESCE(v.data_fine_noleggio, '') <> ''
+           GROUP BY d.vehicle_id
+         )
+         AND scadenza <> (SELECT v.data_fine_noleggio FROM vehicles v WHERE v.id = deadlines.vehicle_id)`,
+    ],
+  },
+];
+
+async function preparaDatabase() {
   await client.executeMultiple(DDL_SCHEMA);
+
+  for (const c of COLONNE_AGGIUNTE) {
+    const info = await client.execute(`PRAGMA table_info(${c.tabella})`);
+    if (!info.rows.some((r) => r.name === c.colonna)) {
+      await client.execute(`ALTER TABLE ${c.tabella} ADD COLUMN ${c.colonna} ${c.tipo}`);
+    }
+  }
+
+  await client.execute(
+    "CREATE TABLE IF NOT EXISTS migrazioni (nome TEXT PRIMARY KEY, eseguita_il TEXT DEFAULT (datetime('now')))"
+  );
+  for (const s of SISTEMAZIONI) {
+    const fatta = await client.execute({ sql: "SELECT 1 FROM migrazioni WHERE nome = ?", args: [s.nome] });
+    if (fatta.rows.length > 0) continue;
+    await client.batch(
+      [...s.istruzioni, { sql: "INSERT INTO migrazioni (nome) VALUES (?)", args: [s.nome] }],
+      "write"
+    );
+  }
+}
+
+let preparazione: Promise<void> | null = null;
+
+/** Crea le tabelle mancanti e aggiorna i database esistenti (una volta per avvio). */
+export function ensureSchema(): Promise<void> {
+  if (!preparazione) {
+    preparazione = preparaDatabase().catch((e) => {
+      preparazione = null; // al prossimo tentativo si riprova
+      throw e;
+    });
+  }
+  return preparazione;
 }
 
 export const db = drizzle(client, { schema });

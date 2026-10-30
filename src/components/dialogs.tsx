@@ -39,6 +39,7 @@ import {
   updateRefuel,
   type FormResult,
 } from "@/lib/actions";
+import { currentMonthKey, fmtNum } from "@/lib/format";
 
 // ---------------------------------------------------------------------------
 // Guscio modale
@@ -593,7 +594,15 @@ export function DeleteFineButton({ id }: { id: number }) {
 // DIARIO AUTISTI
 // ---------------------------------------------------------------------------
 
-function DriverLogForm({ vehicleId, onClose }: { vehicleId: number; onClose: () => void }) {
+function DriverLogForm({
+  vehicleId,
+  kmInizioSuggeriti,
+  onClose,
+}: {
+  vehicleId: number;
+  kmInizioSuggeriti: number | null;
+  onClose: () => void;
+}) {
   const [state, formAction, pending] = useActionState(addDriverLog.bind(null, vehicleId), {
     ok: false,
   } as FormResult);
@@ -605,31 +614,53 @@ function DriverLogForm({ vehicleId, onClose }: { vehicleId: number; onClose: () 
   return (
     <form action={formAction}>
       <div className="grid grid-cols-2 gap-4">
-        <Field label="Data *">
-          <input className="input" type="date" name="data" defaultValue={todayIso()} required />
+        <Field label="Mese *">
+          <input className="input" type="month" name="mese" defaultValue={currentMonthKey()} required />
         </Field>
-        <Field label="Conducente / Autista *">
-          <input className="input" type="text" name="conducente" placeholder="Nome Autista" required />
+        <Field label="Autista *">
+          <input className="input" type="text" name="conducente" placeholder="Nome autista" required />
         </Field>
-        <Field label="Km Inizio Giornata">
-          <input className="input font-mono" type="number" name="kmInizio" />
+        <Field label="Km inizio mese">
+          <input
+            className="input font-mono"
+            type="text"
+            inputMode="numeric"
+            name="kmInizio"
+            placeholder="Es. 85.200"
+            defaultValue={kmInizioSuggeriti !== null ? fmtNum(kmInizioSuggeriti) : undefined}
+          />
         </Field>
-        <Field label="Km Fine Giornata">
-          <input className="input font-mono" type="number" name="kmFine" />
+        <Field label="Km fine mese">
+          <input className="input font-mono" type="text" inputMode="numeric" name="kmFine" placeholder="Es. 87.950" />
         </Field>
         <div className="col-span-2">
-          <Field label="Note / Segnalazioni">
-            <input className="input" type="text" name="note" placeholder="Esempio: mezzo pulito, specchietto graffiato..." />
+          <Field label="Note">
+            <input
+              className="input"
+              type="text"
+              name="note"
+              placeholder="Esempio: cambio autista a metà mese, mezzo in officina..."
+            />
           </Field>
+          <p className="mt-2 text-[11px] text-mute">
+            I km di inizio mese sono proposti dalla fine del mese precedente. Se l&apos;autista è già
+            registrato per quel mese, i dati vengono aggiornati.
+          </p>
         </div>
       </div>
       <ErrorBox msg={state.error} />
-      <SubmitRow pending={pending} onClose={onClose} cta="Registra diario" />
+      <SubmitRow pending={pending} onClose={onClose} cta="Registra mese" />
     </form>
   );
 }
 
-export function AddDriverLogDialog({ vehicleId }: { vehicleId: number }) {
+export function AddDriverLogDialog({
+  vehicleId,
+  kmInizioSuggeriti = null,
+}: {
+  vehicleId: number;
+  kmInizioSuggeriti?: number | null;
+}) {
   const [open, setOpen] = useState(false);
   const close = () => setOpen(false);
   return (
@@ -638,8 +669,8 @@ export function AddDriverLogDialog({ vehicleId }: { vehicleId: number }) {
         <User className="h-4 w-4" strokeWidth={2.4} /> Diario Autista
       </button>
       {open ? (
-        <ModalShell title="Registra Autista Giornaliero" icon={User} onClose={close}>
-          <DriverLogForm vehicleId={vehicleId} onClose={close} />
+        <ModalShell title="Autista del mese" icon={User} onClose={close}>
+          <DriverLogForm vehicleId={vehicleId} kmInizioSuggeriti={kmInizioSuggeriti} onClose={close} />
         </ModalShell>
       ) : null}
     </>

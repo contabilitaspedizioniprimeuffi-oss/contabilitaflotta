@@ -26,6 +26,8 @@ export const vehicles = sqliteTable("vehicles", {
   dataInizioNoleggio: text("data_inizio_noleggio"),
   dataFineNoleggio: text("data_fine_noleggio"),
   canoneMensile: text("canone_mensile"),
+  // Noleggio/leasing: km massimi da rispettare secondo il contratto (letti sul contachilometri)
+  kmMassimiContratto: integer("km_massimi_contratto"),
 
   // Dati tecnici
   carburante: text("carburante").notNull().default("diesel"),

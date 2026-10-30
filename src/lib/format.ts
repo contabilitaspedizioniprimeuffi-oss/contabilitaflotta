@@ -65,6 +65,14 @@ export function monthKey(iso: string): string {
   return iso.slice(0, 7);
 }
 
+/** "2026-10-01" (o "2026-10") → "ottobre 2026" */
+export function fmtMese(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const [y, m] = iso.split("-").map(Number);
+  if (!y || !m) return "—";
+  return new Intl.DateTimeFormat("it-IT", { month: "long", year: "numeric" }).format(new Date(y, m - 1, 1));
+}
+
 export function monthLabel(key: string): string {
   const [y, m] = key.split("-").map(Number);
   return new Intl.DateTimeFormat("it-IT", { month: "short" }).format(new Date(y, m - 1, 1));

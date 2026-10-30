@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import { vehicles } from "@/db/schema";
+import { dopoSalvataggioMezzo } from "@/lib/scadenza-noleggio";
 
 function str(fd: FormData, key: string): string | null {
   const v = fd.get(key);
@@ -23,6 +24,14 @@ function int(fd: FormData, key: string): number | null {
   if (!s) return null;
   const n = parseInt(s, 10);
   return Number.isFinite(n) ? n : null;
+}
+
+/** Km scritti anche all'italiana: "120.000", "120 000 km" → 120000 */
+function km(fd: FormData, key: string): number | null {
+  const s = str(fd, key);
+  if (!s) return null;
+  const n = parseInt(s.replace(/km/i, "").replace(/[.\s']/g, ""), 10);
+  return Number.isFinite(n) && n > 0 ? n : null;
 }
 
 function buildValues(fd: FormData) {
@@ -62,6 +71,7 @@ function buildValues(fd: FormData) {
     dataInizioNoleggio: isNoleggioOrLeasing ? str(fd, "dataInizioNoleggio") : null,
     dataFineNoleggio: isNoleggioOrLeasing ? str(fd, "dataFineNoleggio") : null,
     canoneMensile: isNoleggioOrLeasing ? num(fd, "canoneMensile") : null,
+    kmMassimiContratto: isNoleggioOrLeasing ? km(fd, "kmMassimiContratto") : null,
   };
 }
 
@@ -72,9 +82,11 @@ export async function POST(req: NextRequest) {
     const values = buildValues(fd);
 
     const [row] = await db.insert(vehicles).values(values).returning({ id: vehicles.id });
+    await dopoSalvataggioMezzo(row.id, values.dataFineNoleggio, null);
 
     revalidatePath("/");
     revalidatePath("/mezzi");
+    revalidatePath("/scadenze");
 
     return NextResponse.json({ ok: true, id: row.id });
   } catch (e: unknown) {
@@ -99,10 +111,22 @@ export async function PATCH(req: NextRequest) {
     const fd = await req.formData();
     const values = buildValues(fd);
 
+    const [prima] = await db
+      .select({ dataFineNoleggio: vehicles.dataFineNoleggio })
+      .from(vehicles)
+      .where(eq(vehicles.id, vehicleId))
+      .limit(1);
+    if (!prima) {
+      return NextResponse.json({ ok: false, error: "Mezzo non trovato." }, { status: 404 });
+    }
+
     await db.update(vehicles).set(values).where(eq(vehicles.id, vehicleId));
+    // la data di fine contratto va anche nell'elenco Scadenze (letto dalla Panoramica)
+    await dopoSalvataggioMezzo(vehicleId, values.dataFineNoleggio, prima.dataFineNoleggio);
 
     revalidatePath("/");
     revalidatePath("/mezzi");
+    revalidatePath("/scadenze");
     revalidatePath(`/mezzi/${vehicleId}`);
 
     return NextResponse.json({ ok: true, id: vehicleId });
