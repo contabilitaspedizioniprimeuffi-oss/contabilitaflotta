@@ -1,6 +1,12 @@
-import * as fs from "fs";
-import * as path from "path";
 import { db, ensureSchema } from "@/db";
+import {
+  formattaDataOra,
+  indirizzoFoglio,
+  infoCopiaLocale,
+  leggiCopiaLocale,
+  salvaCopiaLocale,
+  scaricaFoglio,
+} from "@/lib/foglio-google";
 import { deadlines, refuels, vehicles } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
@@ -11,6 +17,9 @@ export interface SyncResult {
   refuelsCount: number;
   deadlinesCount: number;
   source: string;
+  /** true se i dati arrivano dal Foglio Google online */
+  online: boolean;
+  avviso?: string;
 }
 
 function parseItalianDate(s: string | null | undefined): string | null {
@@ -58,33 +67,49 @@ function parseItalianLiters(s: string | number | null | undefined): number {
 
 export async function syncFromSheetData(rawText?: string): Promise<SyncResult> {
   await ensureSchema();
-  let source = "Cache locale del Foglio Google";
+  let source = "File caricato";
+  let online = false;
+  let avviso: string | undefined;
   let text = rawText;
 
-  // 1. Prova a scaricare dal vivo se non fornito.
-  //    L'ID del Foglio Google sta nel file .env della cartella del programma
-  //    (GOOGLE_SHEET_ID=...), non nel codice.
-  const spreadsheetId = process.env.GOOGLE_SHEET_ID?.trim();
-  if (!text && spreadsheetId) {
-    try {
-      const liveUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv&sheet=RIEPILOGO`;
-      const res = await fetch(liveUrl, { cache: "no-store" });
-      if (res.ok) {
-        source = "Google Sheets Live (Online)";
-        // In futuro se l'utente apre il link, prenderemo tutti i fogli
+  // 1. Foglio Google online (app web Apps Script, indirizzo in .env.local)
+  if (!text) {
+    const url = indirizzoFoglio();
+    if (url) {
+      const r = await scaricaFoglio(url);
+      if (r.ok) {
+        text = r.testo;
+        source = "Foglio Google (online)";
+        online = true;
+        try {
+          salvaCopiaLocale(r.testo); // copia per quando manca internet
+        } catch {
+          // la copia e' solo una riserva
+        }
+      } else {
+        avviso = `Foglio Google non raggiungibile: ${r.errore}.`;
       }
-    } catch {
-      // Ignora errori di rete e passa alla cache locale
     }
   }
 
-  // 2. Se non c'è testo online, leggi dal file locale esportato
+  // 2. Altrimenti: ultima copia salvata nel PC (sheets_dump.txt)
   if (!text) {
-    const filePath = path.resolve(process.cwd(), "sheets_dump.txt");
-    if (fs.existsSync(filePath)) {
-      text = fs.readFileSync(filePath, "utf-8");
+    const copia = leggiCopiaLocale();
+    if (copia) {
+      text = copia;
+      const info = infoCopiaLocale();
+      source = info.aggiornataIl
+        ? `copia salvata nel PC (del ${formattaDataOra(info.aggiornataIl)})`
+        : "copia salvata nel PC";
+      if (!avviso && !indirizzoFoglio()) {
+        avviso = "Il Foglio Google non è collegato: sono stati usati i dati della copia salvata nel PC.";
+      }
+    } else if (avviso) {
+      throw new Error(`${avviso} Nel PC non c'è ancora una copia dei dati.`);
     } else {
-      throw new Error("File dati del foglio non trovato. Sincronizzazione non riuscita.");
+      throw new Error(
+        "Il Foglio Google non è collegato e nel PC non c'è una copia dei dati. Collegalo con «Collega il Foglio Google».",
+      );
     }
   }
 
@@ -281,5 +306,7 @@ export async function syncFromSheetData(rawText?: string): Promise<SyncResult> {
     refuelsCount: totalRefuels,
     deadlinesCount: totalDeadlines,
     source,
+    online,
+    avviso,
   };
 }
