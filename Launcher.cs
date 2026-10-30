@@ -4,11 +4,14 @@
 //  1) prepara il programma (strumenti\aggiorna.ps1 -SoloAvvio): nessun
 //     download, ricompila solo se serve
 //  2) avvia il server locale del programma in background
-//  3) apre la finestra del programma (Edge in modalita' applicazione)
+//  3) apre la finestra del programma (Edge in modalita' applicazione) e
+//     mostra un'icona vicino all'orologio: "Apri" / "Chiudi il programma"
 //  4) se nel programma si preme "Sincronizza con GitHub" > "Scarica e
 //     installa", chiude il server, installa la nuova versione da GitHub
 //     (strumenti\aggiorna.ps1) e riapre il programma
-//  5) quando la finestra viene chiusa, arresta il server
+//  5) quando la finestra viene chiusa (o si sceglie "Chiudi il programma"
+//     dall'icona) arresta il server. Se la finestra di Edge non e'
+//     rilevabile, il programma resta aperto e si chiude dall'icona.
 //
 //  Registri: cartella "logs" (avvio.log, server.log, aggiornamento.log)
 //
@@ -19,11 +22,13 @@
 //     /r:System.Drawing.dll /r:System.Management.dll Launcher.cs
 // =============================================================================
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Management;
 using System.Net;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Windows.Forms;
@@ -40,6 +45,16 @@ namespace BancaDatiAutomezzi
         static FinestraAvvio finestra;
         static Process server;
         static bool serverPronto;
+        static Process finestraApp;               // Edge aperto all'avvio
+        static NotifyIcon icona;                  // icona vicino all'orologio
+        static volatile bool chiusuraRichiesta;   // "Chiudi il programma" dall'icona
+
+        [DllImport("user32.dll")] static extern bool AllowSetForegroundWindow(int dwProcessId);
+        [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr hWnd);
+        [DllImport("user32.dll")] static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);
+        [DllImport("user32.dll")] static extern bool IsIconic(IntPtr hWnd);
+        const int ASFW_ANY = -1;
+        const int SW_RESTORE = 9;
 
         [STAThread]
         static void Main()
@@ -48,10 +63,11 @@ namespace BancaDatiAutomezzi
             logDir = Path.Combine(appDir, "logs");
             try { Directory.CreateDirectory(logDir); } catch { }
 
-            // Il programma e' gia' aperto: apri solo un'altra finestra
-            if (ServerAttivo())
+            // Il programma e' gia' aperto: porta davanti la sua finestra (o aprine una)
+            if (ServerAttivo(3000))
             {
-                ApriFinestra();
+                Log("Programma gia' aperto: mostro la finestra");
+                MostraFinestra();
                 return;
             }
 
@@ -76,42 +92,53 @@ namespace BancaDatiAutomezzi
                     lavoro.Start();
                 };
                 Application.Run(finestra);
+
+                if (!serverPronto)
+                {
+                    string causa = Diagnosi();
+                    FermaServer();
+                    Log("Avvio non riuscito: " + causa.Replace("\n", " | "));
+                    Messaggio(
+                        "Il programma non si \u00e8 avviato.\n\n" + causa + "\n\n" +
+                        "I dettagli sono nella cartella:\n" + logDir + "\n\n" +
+                        "Nel frattempo puoi avviarlo con \"avvia.bat\".",
+                        MessageBoxIcon.Error);
+                    return;
+                }
+
+                icona = CreaIcona();
+                try { SorvegliaFinestra(); }
+                finally
+                {
+                    try { icona.Visible = false; icona.Dispose(); } catch { }
+                }
+                FermaServer();
+                Log("Programma chiuso");
             }
             finally
             {
                 try { mutex.ReleaseMutex(); } catch { }
             }
-
-            if (!serverPronto)
-            {
-                FermaServer();
-                MessageBox.Show(
-                    "Il programma non si \u00e8 avviato correttamente.\n\n" +
-                    "I dettagli sono nella cartella:\n" + logDir + "\n\n" +
-                    "Puoi provare ad avviarlo con \"avvia.bat\".",
-                    "Banca Dati Automezzi", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
-            }
-
-            Process finestraApp = ApriFinestra();
-            if (finestraApp == null) return;   // senza Edge: browser predefinito, il server resta attivo
-            SorvegliaFinestra(finestraApp);
-            Log("Finestra chiusa: arresto il server");
-            FermaServer();
         }
 
-        // Resta in attesa finche' la finestra del programma e' aperta e intanto
-        // esegue gli aggiornamenti chiesti dal pulsante "Sincronizza con GitHub"
-        static void SorvegliaFinestra(Process finestraApp)
+        // Resta in attesa finche' il programma e' aperto e intanto esegue gli
+        // aggiornamenti chiesti dal pulsante "Sincronizza con GitHub".
+        // Termina quando la finestra viene chiusa o si sceglie "Chiudi il
+        // programma" dall'icona vicino all'orologio.
+        static void SorvegliaFinestra()
         {
             string richiesta = Path.Combine(logDir, "richiesta-aggiornamento");
             try { File.Delete(richiesta); } catch { }
             DateTime ultimaRichiesta = DateTime.MinValue;
             DateTime prossimoControllo = DateTime.MinValue;
+            DateTime inizio = DateTime.Now;
+            bool finestraVista = false;   // la finestra del programma e' stata rilevata
+            bool avvisoMostrato = false;
             int assenze = 0;
-            while (true)
+            while (!chiusuraRichiesta)
             {
-                Thread.Sleep(1000);
+                Attendi(1000);
+                if (chiusuraRichiesta) break;
 
                 if (File.Exists(richiesta))
                 {
@@ -125,21 +152,45 @@ namespace BancaDatiAutomezzi
                         ultimaRichiesta = quando;
                         AggiornaSuRichiesta(testo.Contains("forza"));
                         assenze = 0;
+                        prossimoControllo = DateTime.MinValue;
                         continue;
                     }
                 }
 
-                bool processoVivo = false;
-                try { processoVivo = !finestraApp.HasExited; } catch { }
-                if (processoVivo) { assenze = 0; continue; }
-
-                // Edge a volte passa la finestra a un altro processo: si controlla
-                // se resta aperta una finestra con il profilo del programma
                 if (DateTime.Now < prossimoControllo) continue;
                 prossimoControllo = DateTime.Now.AddSeconds(2);
-                if (EdgeProgrammaAperto()) assenze = 0;
-                else if (++assenze >= 2) return;
+
+                if (FinestraProgramma() != IntPtr.Zero)
+                {
+                    if (!finestraVista)
+                        Log("Finestra del programma aperta (dopo " + (int)(DateTime.Now - inizio).TotalSeconds + " s)");
+                    finestraVista = true;
+                    assenze = 0;
+                    continue;
+                }
+
+                if (finestraVista)
+                {
+                    if (++assenze >= 2)
+                    {
+                        Log("Finestra chiusa: arresto il server");
+                        return;
+                    }
+                    continue;
+                }
+
+                // Finestra mai rilevata (es. Edge l'ha passata a un altro suo
+                // processo): invece di chiudere tutto, il programma resta aperto
+                // e si apre / chiude dall'icona vicino all'orologio
+                if (!avvisoMostrato && (DateTime.Now - inizio).TotalSeconds >= 25)
+                {
+                    avvisoMostrato = true;
+                    Log("Finestra del programma non rilevata: il programma resta aperto (icona vicino all'orologio)");
+                    AvvisoIcona();
+                }
             }
+            Log("Chiusura scelta dall'icona: arresto il server");
+            ChiudiFinestreProgramma();
         }
 
         // Aggiornamento chiesto dal pulsante "Sincronizza con GitHub"
@@ -178,17 +229,18 @@ namespace BancaDatiAutomezzi
 
             if (!serverPronto)
             {
-                MessageBox.Show(
-                    "Il programma non si \u00e8 riaperto dopo l'aggiornamento.\n\n" +
-                    "Chiudi la finestra del programma e riaprilo. Se il problema resta, " +
+                Messaggio(
+                    "Il programma non si \u00e8 riaperto dopo l'aggiornamento.\n\n" + Diagnosi() + "\n\n" +
+                    "Chiudi il programma (icona vicino all'orologio) e riaprilo. Se il problema resta, " +
                     "i dettagli sono nella cartella:\n" + logDir,
-                    "Banca Dati Automezzi", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    MessageBoxIcon.Warning);
             }
         }
 
-        // C'e' ancora un processo Edge che usa il profilo dedicato al programma?
-        static bool EdgeProgrammaAperto()
+        // Processi Edge che usano il profilo dedicato al programma
+        static List<int> ProcessiProfilo()
         {
+            List<int> elenco = new List<int>();
             try
             {
                 using (ManagementObjectSearcher s = new ManagementObjectSearcher(
@@ -196,13 +248,180 @@ namespace BancaDatiAutomezzi
                     "AND CommandLine LIKE '%BancaDatiAutomezzi%ProfiloEdge%'"))
                 using (ManagementObjectCollection r = s.Get())
                 {
-                    return r.Count > 0;
+                    foreach (ManagementObject o in r)
+                    {
+                        try { elenco.Add(Convert.ToInt32(o["ProcessId"])); } catch { }
+                        o.Dispose();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log("Ricerca delle finestre di Edge non riuscita: " + ex.Message);
+            }
+            return elenco;
+        }
+
+        // Finestra del programma aperta (Edge con il profilo dedicato), se c'e'
+        static IntPtr FinestraProgramma()
+        {
+            try
+            {
+                if (finestraApp != null && !finestraApp.HasExited)
+                {
+                    finestraApp.Refresh();
+                    if (finestraApp.MainWindowHandle != IntPtr.Zero) return finestraApp.MainWindowHandle;
+                }
+            }
+            catch { }
+            foreach (int pid in ProcessiProfilo())
+            {
+                try
+                {
+                    using (Process p = Process.GetProcessById(pid))
+                        if (p.MainWindowHandle != IntPtr.Zero) return p.MainWindowHandle;
+                }
+                catch { }
+            }
+            return IntPtr.Zero;
+        }
+
+        // Porta davanti la finestra del programma, o ne apre una nuova
+        static void MostraFinestra()
+        {
+            IntPtr h = FinestraProgramma();
+            if (h == IntPtr.Zero)
+            {
+                try { AllowSetForegroundWindow(ASFW_ANY); } catch { }
+                ApriFinestra();
+                return;
+            }
+            try
+            {
+                if (IsIconic(h)) ShowWindowAsync(h, SW_RESTORE);
+                SetForegroundWindow(h);
+            }
+            catch { }
+        }
+
+        static void ChiudiFinestreProgramma()
+        {
+            foreach (int pid in ProcessiProfilo())
+            {
+                try
+                {
+                    using (Process p = Process.GetProcessById(pid))
+                        if (p.MainWindowHandle != IntPtr.Zero) p.CloseMainWindow();
+                }
+                catch { }
+            }
+        }
+
+        // Icona vicino all'orologio, visibile finche' il programma e' aperto
+        static NotifyIcon CreaIcona()
+        {
+            NotifyIcon n = new NotifyIcon();
+            try { n.Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
+            if (n.Icon == null) n.Icon = SystemIcons.Application;
+            n.Text = "Banca Dati Automezzi (aperto)";
+            ContextMenu menu = new ContextMenu();
+            menu.MenuItems.Add("Apri Banca Dati Automezzi", delegate { MostraFinestra(); });
+            menu.MenuItems.Add("-");
+            menu.MenuItems.Add("Chiudi il programma", delegate
+            {
+                if (MessageBox.Show("Chiudere Banca Dati Automezzi?", "Banca Dati Automezzi",
+                        MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
+                    chiusuraRichiesta = true;
+            });
+            n.ContextMenu = menu;
+            n.MouseClick += delegate (object sender, MouseEventArgs e)
+            {
+                if (e.Button == MouseButtons.Left) MostraFinestra();
+            };
+            n.Visible = true;
+            return n;
+        }
+
+        static void AvvisoIcona()
+        {
+            try
+            {
+                icona.ShowBalloonTip(10000, "Banca Dati Automezzi \u00e8 aperto",
+                    "Per aprire la finestra del programma o chiuderlo usa questa icona vicino all'orologio.",
+                    ToolTipIcon.Info);
+            }
+            catch { }
+        }
+
+        // Attesa che lascia funzionare l'icona (menu e clic)
+        static void Attendi(int millisecondi)
+        {
+            DateTime fine = DateTime.Now.AddMilliseconds(millisecondi);
+            while (DateTime.Now < fine && !chiusuraRichiesta)
+            {
+                Application.DoEvents();
+                Thread.Sleep(50);
+            }
+        }
+
+        // Messaggio sempre in primo piano (non resta nascosto dietro altre finestre)
+        static void Messaggio(string testo, MessageBoxIcon tipo)
+        {
+            try
+            {
+                using (Form proprietario = new Form())
+                {
+                    Rectangle area = Screen.PrimaryScreen.WorkingArea;
+                    proprietario.TopMost = true;
+                    proprietario.ShowInTaskbar = false;
+                    proprietario.FormBorderStyle = FormBorderStyle.None;
+                    proprietario.Opacity = 0;
+                    proprietario.StartPosition = FormStartPosition.Manual;
+                    proprietario.Bounds = new Rectangle(area.Left + area.Width / 2, area.Top + area.Height / 2, 1, 1);
+                    proprietario.Show();
+                    proprietario.Activate();
+                    MessageBox.Show(proprietario, testo, "Banca Dati Automezzi", MessageBoxButtons.OK, tipo);
                 }
             }
             catch
             {
-                return false;
+                MessageBox.Show(testo, "Banca Dati Automezzi", MessageBoxButtons.OK, tipo,
+                                MessageBoxDefaultButton.Button1, MessageBoxOptions.DefaultDesktopOnly);
             }
+        }
+
+        // Causa probabile di un avvio non riuscito, da mostrare all'utente
+        static string Diagnosi()
+        {
+            bool serverTerminato = true;
+            try { serverTerminato = server == null || server.HasExited; } catch { }
+            string coda = CodaLog(Path.Combine(logDir, "server.log"), 8);
+            if (coda.Contains("EADDRINUSE") || (serverTerminato && PortaOccupata()))
+                return "La porta " + Porta + " \u00e8 gi\u00e0 usata da un altro programma: probabilmente \u00e8 ancora " +
+                       "aperta la finestra nera di \"avvia.bat\" (o un'altra copia del programma). " +
+                       "Chiudila, oppure riavvia il PC, e riapri il programma.";
+            if (coda.Length == 0)
+                return "Il server del programma non \u00e8 partito (vedi avvio.log).";
+            return "Ultime righe del registro del server:\n" + coda;
+        }
+
+        static string CodaLog(string file, int righe)
+        {
+            try
+            {
+                if (!File.Exists(file)) return "";
+                string testo;
+                using (FileStream fs = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+                using (StreamReader r = new StreamReader(fs))
+                    testo = r.ReadToEnd();
+                string[] tutte = testo.Replace("\r", "").Split('\n');
+                List<string> scelte = new List<string>();
+                for (int k = tutte.Length - 1; k >= 0 && scelte.Count < righe; k--)
+                    if (tutte[k].Trim().Length > 0) scelte.Insert(0, tutte[k].Trim());
+                string esito = string.Join("\n", scelte.ToArray());
+                return esito.Length > 700 ? "..." + esito.Substring(esito.Length - 700) : esito;
+            }
+            catch { return ""; }
         }
 
         // Lavoro svolto mentre e' visibile la finestra di avvio
@@ -216,6 +435,15 @@ namespace BancaDatiAutomezzi
                 AvviaServer();
                 serverPronto = AttendiServer(180);
                 Log(serverPronto ? "Server pronto" : "Il server non risponde");
+                if (serverPronto)
+                {
+                    // Si apre mentre la finestra di avvio e' ancora davanti:
+                    // cosi' Windows la porta in primo piano
+                    finestra.Stato("Apro la finestra del programma...");
+                    try { AllowSetForegroundWindow(ASFW_ANY); } catch { }
+                    finestraApp = ApriFinestra();
+                    Thread.Sleep(2500);
+                }
             }
             catch (Exception ex)
             {
@@ -377,12 +605,12 @@ namespace BancaDatiAutomezzi
             return false;
         }
 
-        static bool ServerAttivo()
+        static bool ServerAttivo(int attesaMs = 1500)
         {
             try
             {
                 HttpWebRequest req = (HttpWebRequest)WebRequest.Create(Indirizzo + "/api/health");
-                req.Timeout = 1500;
+                req.Timeout = attesaMs;
                 req.Proxy = null;
                 using (HttpWebResponse r = (HttpWebResponse)req.GetResponse())
                     return r.StatusCode == HttpStatusCode.OK;
@@ -464,10 +692,16 @@ namespace BancaDatiAutomezzi
                                 " --user-data-dir=\"" + profilo + "\"" +
                                 " --no-first-run --no-default-browser-check";
                 psi.UseShellExecute = false;
-                try { return Process.Start(psi); }
+                try
+                {
+                    Process p = Process.Start(psi);
+                    Log("Apertura finestra con Edge (processo " + p.Id + ")");
+                    return p;
+                }
                 catch (Exception ex) { Log("Apertura Edge non riuscita: " + ex.Message); }
             }
-            try { Process.Start(Indirizzo); } catch { }
+            else Log("Edge non trovato: apro il browser predefinito");
+            try { Process.Start(Indirizzo); } catch (Exception ex) { Log("Apertura browser non riuscita: " + ex.Message); }
             return null;
         }
 

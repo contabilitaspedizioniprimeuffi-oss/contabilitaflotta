@@ -11,9 +11,11 @@ Doppio clic su **`Banca Dati Automezzi.exe`** (o sul suo collegamento sul Deskto
 
 All'avvio il programma prepara i file (li ricompila solo se servono), avvia il server locale e apre la finestra del programma (Microsoft Edge in modalità applicazione). All'apertura non scarica nulla da internet.
 
-Quando chiudi la finestra, il programma si ferma.
+Mentre il programma è aperto, vicino all'orologio di Windows c'è la sua icona: clic per riportare davanti la finestra, tasto destro per **Apri** o **Chiudi il programma**.
 
-Se il programma non parte, usa **`avvia.bat`**: apre una finestra nera che mostra gli eventuali errori.
+Quando chiudi la finestra, il programma si ferma. Se Windows non permette di seguire la finestra di Edge, il programma resta aperto e si chiude dall'icona.
+
+Se il programma non parte compare un messaggio con la causa (per esempio la finestra nera di `avvia.bat` ancora aperta). In alternativa usa **`avvia.bat`**: apre una finestra nera che mostra gli eventuali errori.
 
 ---
 
@@ -40,11 +42,10 @@ La logica dell'aggiornamento è in `strumenti/aggiorna.ps1`, il pulsante in `src
 
 - Il database è un file **SQLite** nella cartella del programma: **`local_database.db`**.
 - Le tabelle vengono create automaticamente se mancano (`src/db/index.ts`).
-- La sincronizzazione legge la copia locale del Foglio Google **`sheets_dump.txt`**. Il file contiene dati reali e non viene mai pubblicato su GitHub.
-- L'ID del Foglio Google sta nel file **`.env`** della cartella del programma (non va tenuto su GitHub; gli aggiornamenti non lo cancellano):
-  ```
-  GOOGLE_SHEET_ID=...
-  ```
+- **Sincronizza Fogli** legge il Foglio Google online tramite una piccola «antenna» Apps Script nel proprio Drive (codice in `strumenti/foglio-google.gs`; basta che il Foglio sia condiviso con il proprio account). Si collega una volta sola dal programma: **Sincronizza Fogli › Foglio Google** (le istruzioni sono nella finestra).
+- L'indirizzo dello script si salva nel file **`.env.local`** del PC (`GOOGLE_SHEET_URL=...`): funziona come una password, non va mai su GitHub e gli aggiornamenti non lo toccano.
+- Ogni sincronizzazione riuscita salva una copia dei dati in **`sheets_dump.txt`**: se manca internet, il programma usa quella copia e lo segnala. Il file contiene dati reali e non viene mai pubblicato su GitHub.
+- L'ID del Foglio Google (`GOOGLE_SHEET_ID=...` nel file **`.env`**) serve solo per il link «Apri il Foglio».
 
 ### Dati demo
 `popola-dati.bat` (oppure `npm run seed`) **cancella tutti i dati** e inserisce 10 veicoli di esempio.
