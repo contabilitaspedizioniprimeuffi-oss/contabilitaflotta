@@ -14,6 +14,6 @@ export async function GET(req: Request) {
 // Installa l'ultima versione pubblicata su GitHub
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
-  const esito = richiediAggiornamento(Boolean(body?.forza));
+  const esito = await richiediAggiornamento(Boolean(body?.forza));
   return NextResponse.json(esito, { status: esito.ok ? 200 : 409 });
 }

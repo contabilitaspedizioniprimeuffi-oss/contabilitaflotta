@@ -3,15 +3,19 @@
 // ---------------------------------------------------------------------------
 // - controllaAggiornamenti(): confronta la versione installata con quella
 //   pubblicata su GitHub ed elenca le novita'.
-// - richiediAggiornamento(): chiede a "Banca Dati Automezzi.exe" di installare
-//   la nuova versione. Il programma di avvio chiude il server, esegue
-//   strumenti/aggiorna.ps1 (backup dei dati, aggiornamento, compilazione,
-//   ritorno automatico alla versione precedente se qualcosa va storto) e
-//   riavvia il programma.
+// - richiediAggiornamento(): installa la nuova versione.
+//   * Programma aperto da "Banca Dati Automezzi.exe": l'exe chiude il server,
+//     esegue strumenti/aggiorna.ps1 (backup dei dati, aggiornamento,
+//     compilazione, ritorno automatico alla versione precedente se qualcosa va
+//     storto) e riavvia il programma.
+//   * Programma aperto in un altro modo (per esempio da avvia.bat): parte, in
+//     una finestra visibile, strumenti/aggiorna-e-riapri.ps1; il server si
+//     chiude da solo, lo script esegue lo stesso aggiornamento e riapre il
+//     programma da "Banca Dati Automezzi.exe".
 // I dati (local_database.db, sheets_dump.txt, .env.local) non vengono toccati.
 // ---------------------------------------------------------------------------
-import { execFile } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { execFile, spawn } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 const REPO_URL =
@@ -58,6 +62,13 @@ const fileEsito = () => path.resolve(process.cwd(), "logs", "ultimo-aggiornament
 const fileRichiesta = () => path.resolve(process.cwd(), "logs", "richiesta-aggiornamento");
 const fileScartata = () => path.resolve(process.cwd(), "strumenti", ".versione-scartata");
 const cartellaLog = () => path.resolve(process.cwd(), "logs");
+const scriptRiapertura = () => path.resolve(process.cwd(), "strumenti", "aggiorna-e-riapri.ps1");
+const fileSegnaleAvvio = () => path.resolve(process.cwd(), "logs", "aggiornamento-avviato");
+
+/** Il pulsante può installare: programma aperto dall'exe, oppure su Windows con lo script che lo chiude e lo riapre. */
+function installazionePossibile(): boolean {
+  return process.env.BDA_LAUNCHER === "1" || (process.platform === "win32" && existsSync(scriptRiapertura()));
+}
 
 // ---------------------------------------------------------------------------
 // Git
@@ -193,7 +204,7 @@ async function eseguiControllo(): Promise<StatoSincronizzazione> {
     novita: [] as Versione[],
     totaleNovita: 0,
     versioneScartata: false,
-    puoInstallare: process.env.BDA_LAUNCHER === "1",
+    puoInstallare: installazionePossibile(),
     ultimoEsito: leggiEsito(),
     controllatoIl: new Date().toISOString(),
   };
@@ -255,29 +266,78 @@ async function eseguiControllo(): Promise<StatoSincronizzazione> {
 }
 
 // ---------------------------------------------------------------------------
-// Richiesta di installazione (eseguita da "Banca Dati Automezzi.exe")
+// Richiesta di installazione
 // ---------------------------------------------------------------------------
-export function richiediAggiornamento(forza: boolean): { ok: boolean; messaggio: string } {
-  if (process.env.BDA_LAUNCHER !== "1") {
-    return {
-      ok: false,
-      messaggio:
-        "Il programma non è stato aperto da «Banca Dati Automezzi.exe», quindi non può aggiornarsi da solo. " +
-        "Chiudilo e fai doppio clic su «aggiorna-da-github.bat» (oppure riaprilo dall'icona del programma).",
-    };
+export type EsitoRichiesta = {
+  ok: boolean;
+  messaggio: string;
+  /** true se il programma si riaprirà in una nuova finestra (aggiornamento senza l'exe) */
+  nuovaFinestra?: boolean;
+};
+
+export async function richiediAggiornamento(forza: boolean): Promise<EsitoRichiesta> {
+  // Programma aperto da "Banca Dati Automezzi.exe": l'exe esegue l'aggiornamento
+  if (process.env.BDA_LAUNCHER === "1") {
+    try {
+      mkdirSync(cartellaLog(), { recursive: true });
+      writeFileSync(
+        fileRichiesta(),
+        `${forza ? "forza " : ""}${new Date().toISOString()}`,
+      );
+      cache = null;
+      return { ok: true, messaggio: "Aggiornamento avviato." };
+    } catch (e) {
+      return {
+        ok: false,
+        messaggio: `Impossibile avviare l'aggiornamento: ${e instanceof Error ? e.message : String(e)}`,
+      };
+    }
   }
+
+  const ripiego =
+    "Chiudi il programma e fai doppio clic su «aggiorna-da-github.bat», poi riaprilo da «Banca Dati Automezzi.exe».";
+  if (!installazionePossibile()) {
+    return { ok: false, messaggio: `Da qui il programma non può aggiornarsi da solo. ${ripiego}` };
+  }
+
+  // Programma aperto in un altro modo (per esempio da avvia.bat): si avvia lo script che aspetta
+  // la chiusura del programma, lo aggiorna e lo riapre da "Banca Dati Automezzi.exe".
   try {
     mkdirSync(cartellaLog(), { recursive: true });
-    writeFileSync(
-      fileRichiesta(),
-      `${forza ? "forza " : ""}${new Date().toISOString()}`,
-    );
-    cache = null;
-    return { ok: true, messaggio: "Aggiornamento avviato." };
+    rmSync(fileSegnaleAvvio(), { force: true });
+    const comando =
+      `start "Aggiornamento - Banca Dati Automezzi" powershell.exe -NoProfile -ExecutionPolicy Bypass ` +
+      `-File "${scriptRiapertura()}" -PidServer ${process.pid}${forza ? " -Forza" : ""}`;
+    const figlio = spawn("cmd.exe", ["/d", "/s", "/c", `"${comando}"`], {
+      cwd: cartella(),
+      detached: true,
+      stdio: "ignore",
+      windowsHide: true,
+      windowsVerbatimArguments: true,
+    });
+    figlio.on("error", () => {});
+    figlio.unref();
   } catch (e) {
     return {
       ok: false,
-      messaggio: `Impossibile avviare l'aggiornamento: ${e instanceof Error ? e.message : String(e)}`,
+      messaggio: `Impossibile avviare l'aggiornamento (${e instanceof Error ? e.message : String(e)}). ${ripiego}`,
     };
   }
+
+  // Lo script scrive un segnale appena parte: solo allora il programma si chiude
+  for (let i = 0; i < 80 && !existsSync(fileSegnaleAvvio()); i++) {
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  if (!existsSync(fileSegnaleAvvio())) {
+    return { ok: false, messaggio: `L'aggiornamento automatico non è partito. ${ripiego}` };
+  }
+
+  cache = null;
+  // chiusura pulita poco dopo la risposta (con avvia.bat non riparte la modalità di sviluppo)
+  setTimeout(() => process.exit(0), 1500);
+  return {
+    ok: true,
+    messaggio: "Aggiornamento avviato: il programma si chiude e si riapre da solo.",
+    nuovaFinestra: true,
+  };
 }

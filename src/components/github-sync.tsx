@@ -22,7 +22,7 @@ import type { StatoSincronizzazione } from "@/lib/aggiornamento";
 
 const FLAG_DOPO_AGGIORNAMENTO = "bda-dopo-aggiornamento";
 
-type Fase = "pronto" | "avvio" | "chiusura" | "riavvio" | "errore";
+type Fase = "pronto" | "avvio" | "chiusura" | "riavvio" | "riaperto" | "errore";
 
 const ESITI: Record<string, { testo: string; ok: boolean }> = {
   aggiornato: { testo: "riuscita, programma aggiornato", ok: true },
@@ -69,6 +69,8 @@ export default function GithubSync() {
   const [fase, setFase] = useState<Fase>("pronto");
   const [errore, setErrore] = useState<string | null>(null);
   const [appenaAggiornato, setAppenaAggiornato] = useState(false);
+  // aggiornamento senza l'exe: il programma si riapre in una nuova finestra
+  const [nuovaFinestra, setNuovaFinestra] = useState(false);
   const [montato, setMontato] = useState(false);
   const attivo = useRef(true);
 
@@ -143,6 +145,7 @@ export default function GithubSync() {
   }
 
   async function installa(forza: boolean) {
+    let riapreAltrove = false;
     setErrore(null);
     setAppenaAggiornato(false);
     setFase("avvio");
@@ -154,6 +157,8 @@ export default function GithubSync() {
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok || !d.ok) throw new Error(d.messaggio || "Impossibile avviare l'aggiornamento.");
+      setNuovaFinestra(Boolean(d.nuovaFinestra));
+      riapreAltrove = Boolean(d.nuovaFinestra);
     } catch (e) {
       setFase("errore");
       setErrore(e instanceof Error ? e.message : String(e));
@@ -183,6 +188,11 @@ export default function GithubSync() {
     for (const fine = Date.now() + 60 * 60_000; Date.now() < fine && attivo.current; ) {
       await pausa(2000);
       if (await serverAttivo()) {
+        if (riapreAltrove) {
+          // il programma si è riaperto in una nuova finestra: questa si può chiudere
+          setFase("riaperto");
+          return;
+        }
         try {
           sessionStorage.setItem(FLAG_DOPO_AGGIORNAMENTO, "1");
         } catch {}
@@ -344,8 +354,22 @@ export default function GithubSync() {
                       </Passo>
                     </ol>
                     <p className="mt-3 text-xs leading-relaxed text-mute">
-                      Può richiedere qualche minuto. Non chiudere questa finestra: il programma si riaprirà
-                      da solo.
+                      {nuovaFinestra
+                        ? "Può richiedere qualche minuto. Si è aperta una finestra con l'avanzamento: non chiuderla. Alla fine il programma si riapre da solo in una nuova finestra."
+                        : "Può richiedere qualche minuto. Non chiudere questa finestra: il programma si riaprirà da solo."}
+                    </p>
+                  </div>
+                )}
+
+                {/* Aggiornamento finito, programma riaperto in un'altra finestra */}
+                {fase === "riaperto" && (
+                  <div className="rounded-2xl border border-emerald-600/30 bg-emerald-50 px-4 py-4">
+                    <div className="flex items-center gap-2.5">
+                      <CheckCircle2 className="h-5 w-5 text-emerald-700" />
+                      <p className="text-sm font-bold text-ink-900">Aggiornamento completato</p>
+                    </div>
+                    <p className="mt-2 text-sm text-ink-800">
+                      Il programma si è riaperto in una nuova finestra: puoi chiudere questa.
                     </p>
                   </div>
                 )}
@@ -427,8 +451,8 @@ export default function GithubSync() {
                       <div className="flex items-start gap-2.5 rounded-2xl border border-amber/30 bg-amber/10 px-4 py-3 text-sm text-ink-900">
                         <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber" />
                         <span>
-                          Il programma non è stato aperto da «Banca Dati Automezzi.exe», quindi non può
-                          aggiornarsi da solo: chiudilo e fai doppio clic su «aggiorna-da-github.bat».
+                          Da qui il programma non può aggiornarsi da solo: chiudilo e fai doppio clic su
+                          «aggiorna-da-github.bat», poi riaprilo da «Banca Dati Automezzi.exe».
                         </span>
                       </div>
                     )}
@@ -457,7 +481,11 @@ export default function GithubSync() {
                   <button type="button" onClick={chiudi} className="btn-ghost">
                     Chiudi
                   </button>
-                  {daInstallare && info?.puoInstallare ? (
+                  {fase === "riaperto" ? (
+                    <button type="button" onClick={() => window.location.reload()} className="btn-dark">
+                      <RotateCw className="h-4 w-4" /> Ricarica qui
+                    </button>
+                  ) : daInstallare && info?.puoInstallare ? (
                     <button
                       type="button"
                       onClick={() => installa(Boolean(info.versioneScartata))}
