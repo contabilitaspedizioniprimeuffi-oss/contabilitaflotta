@@ -168,23 +168,29 @@ export async function deleteVehicle(vehicleId: number) {
 // RIFORNIMENTI
 // ---------------------------------------------------------------------------
 
+// Nel modulo si inseriscono prezzo al litro, litri e importo (calcolato da solo, correggibile).
+// I chilometri non si chiedono più: nei rifornimenti nuovi si usano quelli attuali del mezzo,
+// in quelli modificati restano quelli già registrati.
 function readRefuelForm(fd: FormData) {
   const data = str(fd, "data");
   const litri = num(fd, "litri");
-  const costo = num(fd, "costo");
-  const km = int(fd, "km");
+  const prezzo = num(fd, "prezzo");
+  let costo = num(fd, "costo");
+  if (costo === null && litri !== null && prezzo !== null) costo = litri * prezzo;
 
-  if (!data || litri === null || costo === null || km === null) {
-    return { error: "Compila data, litri, importo e chilometri." as const };
+  if (!data || litri === null || costo === null) {
+    return { error: "Compila data, prezzo al litro, litri e importo." as const };
   }
   if (litri <= 0) return { error: "I litri devono essere maggiori di zero." as const };
+  if (prezzo !== null && prezzo <= 0) {
+    return { error: "Il prezzo al litro deve essere maggiore di zero." as const };
+  }
 
   return {
     values: {
       data,
       litri: litri.toFixed(2),
       costo: costo.toFixed(2),
-      km,
     },
   };
 }
@@ -208,8 +214,14 @@ export async function addRefuel(
   const { values, error } = readRefuelForm(fd);
   if (error || !values) return { ok: false, error: error ?? "Dati non validi." };
 
-  await db.insert(refuels).values({ vehicleId, ...values });
-  await bumpKmIfNeeded(vehicleId, values.km);
+  // chilometri del rifornimento = chilometri attuali del mezzo
+  const [mezzo] = await db
+    .select({ km: vehicles.kmAttuali })
+    .from(vehicles)
+    .where(eq(vehicles.id, vehicleId));
+  if (!mezzo) return { ok: false, error: "Mezzo non trovato." };
+
+  await db.insert(refuels).values({ vehicleId, ...values, km: mezzo.km });
 
   touch();
   revalidatePath(`/mezzi/${vehicleId}`);
@@ -230,8 +242,6 @@ export async function updateRefuel(
     .where(eq(refuels.id, refuelId))
     .returning();
   if (!row) return { ok: false, error: "Rifornimento non trovato." };
-
-  await bumpKmIfNeeded(row.vehicleId, values.km);
 
   touch();
   revalidatePath(`/mezzi/${row.vehicleId}`);

@@ -162,6 +162,19 @@ function RefuelForm({
     : addRefuel.bind(null, vehicleId);
   const [state, formAction, pending] = useActionState(action, { ok: false } as FormResult);
 
+  // Prezzo al litro e litri: l'importo totale si calcola da solo (e si può correggere)
+  const [prezzo, setPrezzo] = useState(() =>
+    initial && Number(initial.litri) > 0 ? (Number(initial.costo) / Number(initial.litri)).toFixed(3) : "",
+  );
+  const [litri, setLitri] = useState(initial ? String(Number(initial.litri)) : "");
+  const [costo, setCosto] = useState(initial ? Number(initial.costo).toFixed(2) : "");
+
+  function ricalcolaImporto(nuovoPrezzo: string, nuoviLitri: string) {
+    const p = Number(nuovoPrezzo.replace(",", "."));
+    const l = Number(nuoviLitri.replace(",", "."));
+    if (p > 0 && l > 0) setCosto((p * l).toFixed(2));
+  }
+
   useEffect(() => {
     if (state.ok) onClose();
   }, [state.ok, onClose]);
@@ -172,16 +185,58 @@ function RefuelForm({
         <Field label="Data">
           <input className="input" type="date" name="data" defaultValue={initial?.data ?? todayIso()} required />
         </Field>
-        <Field label="Chilometri attuali">
-          <input className="input font-mono" type="number" name="km" min={0} step={1} defaultValue={initial?.km ?? undefined} placeholder="es. 88.450" required />
+        <Field label="Prezzo € al litro">
+          <input
+            className="input font-mono"
+            type="number"
+            name="prezzo"
+            min={0.001}
+            step="0.001"
+            value={prezzo}
+            onChange={(e) => {
+              setPrezzo(e.target.value);
+              ricalcolaImporto(e.target.value, litri);
+            }}
+            placeholder="es. 1,729"
+            required
+          />
         </Field>
         <Field label="Litri">
-          <input className="input font-mono" type="number" name="litri" min={0.1} step="0.01" defaultValue={initial?.litri ?? undefined} placeholder="es. 52,4" required />
+          <input
+            className="input font-mono"
+            type="number"
+            name="litri"
+            min={0.1}
+            step="0.01"
+            value={litri}
+            onChange={(e) => {
+              setLitri(e.target.value);
+              ricalcolaImporto(prezzo, e.target.value);
+            }}
+            placeholder="es. 52,4"
+            required
+          />
         </Field>
         <Field label="Importo totale (€)">
-          <input className="input font-mono" type="number" name="costo" min={0} step="0.01" defaultValue={initial?.costo ?? undefined} placeholder="es. 90,10" required />
+          <input
+            className="input font-mono"
+            type="number"
+            name="costo"
+            min={0}
+            step="0.01"
+            value={costo}
+            onChange={(e) => setCosto(e.target.value)}
+            placeholder="es. 90,60"
+            required
+          />
         </Field>
       </div>
+      <p className="mt-3 text-xs leading-relaxed text-mute">
+        L&apos;importo si calcola da solo (litri × prezzo al litro) e si può correggere.{" "}
+        {initial
+          ? "I chilometri del rifornimento restano quelli già registrati."
+          : "Come chilometri vengono registrati quelli attuali del mezzo."}
+      </p>
       <ErrorBox msg={state.error} />
       <SubmitRow pending={pending} onClose={onClose} cta={initial ? "Salva modifiche" : "Salva rifornimento"} />
     </form>
