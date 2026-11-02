@@ -8,6 +8,7 @@ import {
   scaricaFoglio,
 } from "@/lib/foglio-google";
 import { refuels, vehicles } from "@/db/schema";
+import { INIZIO_CONTABILITA } from "@/lib/contabilita";
 import { allineaScadenzaNoleggio } from "@/lib/scadenza-noleggio";
 import { eq } from "drizzle-orm";
 
@@ -275,7 +276,8 @@ export async function syncFromSheetData(rawText?: string): Promise<SyncResult> {
       const litri = parseItalianLiters(cols[1]);
       const km = parseItalianInt(cols[2]);
 
-      if (date && litri > 0) {
+      // le spese si contano da INIZIO_CONTABILITA: i rifornimenti più vecchi del Foglio si saltano
+      if (date && date >= INIZIO_CONTABILITA && litri > 0) {
         const costo = (litri * 1.72).toFixed(2);
         vehicleRefuels.push({
           data: date,
@@ -306,7 +308,7 @@ export async function syncFromSheetData(rawText?: string): Promise<SyncResult> {
 
   return {
     success: true,
-    message: `Sincronizzazione completata con successo! Aggiornati ${totalVehicles} furgoni e ${totalRefuels} rifornimenti.`,
+    message: `Sincronizzazione completata con successo! Aggiornati ${totalVehicles} furgoni e ${totalRefuels} rifornimenti (dal ${INIZIO_CONTABILITA.split("-").reverse().join("/")}).`,
     vehiclesCount: totalVehicles,
     refuelsCount: totalRefuels,
     deadlinesCount: totalDeadlines,

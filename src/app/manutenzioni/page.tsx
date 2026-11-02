@@ -2,6 +2,7 @@ import { ChevronRight, Filter, Wrench } from "lucide-react";
 import Link from "next/link";
 import Plate from "@/components/plate";
 import { Empty, PageHeader, Pill } from "@/components/ui";
+import { INIZIO_CONTABILITA } from "@/lib/contabilita";
 import { listMaintenancesByType } from "@/lib/data";
 import { fmtDate, fmtEur, fmtNum, MANUT_LABEL } from "@/lib/format";
 
@@ -97,7 +98,11 @@ export default async function ManutenzioniPage(props: {
                       {x.m.km !== null ? fmtNum(x.m.km) : "—"}
                     </td>
                     <td className="td text-right font-mono text-sm font-bold whitespace-nowrap">
-                      {fmtEur(x.m.costo)}
+                      {x.m.data < INIZIO_CONTABILITA && x.m.costo === null ? (
+                        <span className="font-sans text-[11px] font-semibold text-sky">solo promemoria</span>
+                      ) : (
+                        fmtEur(x.m.costo)
+                      )}
                     </td>
                     <td className="td text-right">
                       <Link

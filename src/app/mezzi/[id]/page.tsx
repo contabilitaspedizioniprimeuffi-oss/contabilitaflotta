@@ -55,6 +55,7 @@ import {
   deleteRefuel,
   deleteVehicle,
 } from "@/lib/actions";
+import { INIZIO_CONTABILITA } from "@/lib/contabilita";
 import { computeConsumption, getVehicleBundle, nextServiceInfo } from "@/lib/data";
 import {
   DAY_MS,
@@ -380,7 +381,11 @@ export default async function SchedaMezzo(props: { params: Promise<{ id: string 
                       ) : null}
                     </div>
                     <div className="flex shrink-0 items-center gap-1">
-                      <span className="font-mono text-sm font-bold">{fmtEur(m.costo)}</span>
+                      {m.data < INIZIO_CONTABILITA && m.costo === null ? (
+                        <Pill tone="sky">solo promemoria</Pill>
+                      ) : (
+                        <span className="font-mono text-sm font-bold">{fmtEur(m.costo)}</span>
+                      )}
                       <EditMaintenanceButton initial={m} />
                       <DeleteButton action={deleteMaintenance.bind(null, m.id)} label="Elimina manutenzione" />
                     </div>

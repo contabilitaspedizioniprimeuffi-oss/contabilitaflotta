@@ -130,6 +130,43 @@ const SISTEMAZIONI: { nome: string; istruzioni: string[] }[] = [
          AND scadenza <> (SELECT v.data_fine_noleggio FROM vehicles v WHERE v.id = deadlines.vehicle_id)`,
     ],
   },
+  {
+    // Si riparte da ottobre 2026: spese di carburante e manutenzione precedenti tolte.
+    // Prima vengono copiate (con la targa) nelle tabelle di archivio: non si vedono, ma non si perdono.
+    // Restano, senza spesa, le manutenzioni con un promemoria ancora valido: soglia km non ancora
+    // raggiunta o data non ancora passata, e nessun intervento dello stesso tipo più recente.
+    nome: "2026-11-azzera-spese-prima-di-ottobre",
+    istruzioni: [
+      `CREATE TABLE IF NOT EXISTS archivio_rifornimenti AS
+       SELECT r.*, v.targa AS targa, datetime('now') AS archiviato_il
+       FROM refuels r LEFT JOIN vehicles v ON v.id = r.vehicle_id WHERE 0`,
+      `CREATE TABLE IF NOT EXISTS archivio_manutenzioni AS
+       SELECT m.*, v.targa AS targa, datetime('now') AS archiviato_il
+       FROM maintenances m LEFT JOIN vehicles v ON v.id = m.vehicle_id WHERE 0`,
+      `INSERT INTO archivio_rifornimenti
+       SELECT r.*, v.targa, datetime('now')
+       FROM refuels r LEFT JOIN vehicles v ON v.id = r.vehicle_id WHERE r.data < '2026-10-01'`,
+      `INSERT INTO archivio_manutenzioni
+       SELECT m.*, v.targa, datetime('now')
+       FROM maintenances m LEFT JOIN vehicles v ON v.id = m.vehicle_id WHERE m.data < '2026-10-01'`,
+      `DROP TABLE IF EXISTS temp.promemoria_da_tenere`,
+      `CREATE TEMP TABLE promemoria_da_tenere AS
+       SELECT m.id AS id
+       FROM maintenances m JOIN vehicles v ON v.id = m.vehicle_id
+       WHERE m.data < '2026-10-01'
+         AND ((m.prossimo_km IS NOT NULL AND m.prossimo_km > v.km_attuali)
+              OR (COALESCE(m.prossima_data, '') <> '' AND m.prossima_data >= date('now', 'localtime')))
+         AND NOT EXISTS (
+           SELECT 1 FROM maintenances m2
+           WHERE m2.vehicle_id = m.vehicle_id AND m2.tipo = m.tipo
+             AND (m2.data > m.data OR (m2.data = m.data AND m2.id > m.id)))`,
+      `UPDATE maintenances SET costo = NULL WHERE id IN (SELECT id FROM promemoria_da_tenere)`,
+      `DELETE FROM refuels WHERE data < '2026-10-01'`,
+      `DELETE FROM maintenances
+       WHERE data < '2026-10-01' AND id NOT IN (SELECT id FROM promemoria_da_tenere)`,
+      `DROP TABLE temp.promemoria_da_tenere`,
+    ],
+  },
 ];
 
 async function preparaDatabase() {

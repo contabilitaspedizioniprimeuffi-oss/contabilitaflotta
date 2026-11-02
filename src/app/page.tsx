@@ -28,8 +28,10 @@ import {
   listRefuels,
   listVehicles,
 } from "@/lib/data";
+import { INIZIO_CONTABILITA } from "@/lib/contabilita";
 import {
   fmtEur,
+  fmtMese,
   fmtKm,
   fmtNum,
   fmtDate,
@@ -74,7 +76,12 @@ export default async function Dashboard() {
   const spesaFuelMese = monthFuel.reduce((s, r) => s + Number(r.costo), 0);
   const litriMese = monthFuel.reduce((s, r) => s + Number(r.litri), 0);
 
-  const keys = lastNMonthKeys(6);
+  // il grafico parte dal mese di inizio contabilità (spese azzerate prima di allora)
+  const keys = lastNMonthKeys(6).filter((k) => k >= monthKey(INIZIO_CONTABILITA));
+  const titoloGrafico =
+    keys.length < 6
+      ? `Spesa carburante · da ${fmtMese(INIZIO_CONTABILITA)}`
+      : "Spesa carburante · ultimi 6 mesi";
   const fuelSeries = keys.map((k) => ({
     key: k,
     label: monthLabel(k),
@@ -106,7 +113,8 @@ export default async function Dashboard() {
   const critiche = dlsWithDays.filter((d) => d.days <= 30);
   const prossima = dlsWithDays.find((d) => d.days >= 0);
 
-  // --- manutenzioni mese
+  // --- manutenzioni: in elenco solo quelle da inizio contabilità (le precedenti rimaste sono promemoria)
+  const ultimeManut = recentMans.filter((x) => x.m.data >= INIZIO_CONTABILITA);
   const spesaManutMese = recentMans
     .concat() // la query è già limitata; per il totale mese usiamo solo quelli del mese
     .filter((x) => monthKey(x.m.data) === cur)
@@ -211,7 +219,7 @@ export default async function Dashboard() {
 
       {/* Grafico + costi mensili */}
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-        <SectionCard title="Spesa carburante · ultimi 6 mesi" className="xl:col-span-2">
+        <SectionCard title={titoloGrafico} className="xl:col-span-2">
           <MonthlyBars
             data={fuelSeries.map((f) => ({ label: f.label, value: f.value, current: f.current }))}
           />
@@ -297,7 +305,12 @@ export default async function Dashboard() {
           pad={false}
         >
           <div className="divide-y divide-line">
-            {recentMans.map((x) => {
+            {ultimeManut.length === 0 ? (
+              <p className="px-5 py-6 text-center text-sm text-mute">
+                Nessuna manutenzione da {fmtMese(INIZIO_CONTABILITA)}.
+              </p>
+            ) : null}
+            {ultimeManut.map((x) => {
               const Icon = MANUT_ICON[x.m.tipo] ?? Wrench;
               return (
                 <Link
