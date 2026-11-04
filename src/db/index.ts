@@ -167,6 +167,16 @@ const SISTEMAZIONI: { nome: string; istruzioni: string[] }[] = [
       `DROP TABLE temp.promemoria_da_tenere`,
     ],
   },
+  {
+    // Carburante a 2 € al litro (prima la spesa era stimata a 1,72 €/l): ricalcolata la spesa
+    // dei rifornimenti di ottobre e novembre 2026. Litri e chilometri non cambiano.
+    nome: "2026-11-carburante-2-euro-ottobre-novembre",
+    istruzioni: [
+      `UPDATE refuels
+       SET costo = printf('%.2f', CAST(litri AS REAL) * 2.0)
+       WHERE data >= '2026-10-01' AND data < '2026-12-01'`,
+    ],
+  },
 ];
 
 async function preparaDatabase() {

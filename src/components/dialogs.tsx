@@ -23,6 +23,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import type { Deadline, DriverLog, Fine, Maintenance, Refuel } from "@/db/schema";
+import { prezzoCarburante } from "@/lib/contabilita";
 import {
   addDeadline,
   addDriverLog,
@@ -162,9 +163,14 @@ function RefuelForm({
     : addRefuel.bind(null, vehicleId);
   const [state, formAction, pending] = useActionState(action, { ok: false } as FormResult);
 
-  // Prezzo al litro e litri: l'importo totale si calcola da solo (e si può correggere)
+  // Prezzo al litro e litri: l'importo totale si calcola da solo (e si può correggere).
+  // Nei rifornimenti nuovi il prezzo è già quello in vigore (si può cambiare).
   const [prezzo, setPrezzo] = useState(() =>
-    initial && Number(initial.litri) > 0 ? (Number(initial.costo) / Number(initial.litri)).toFixed(3) : "",
+    initial
+      ? Number(initial.litri) > 0
+        ? String(Number((Number(initial.costo) / Number(initial.litri)).toFixed(3)))
+        : ""
+      : String(prezzoCarburante(todayIso())),
   );
   const [litri, setLitri] = useState(initial ? String(Number(initial.litri)) : "");
   const [costo, setCosto] = useState(initial ? Number(initial.costo).toFixed(2) : "");
@@ -197,7 +203,7 @@ function RefuelForm({
               setPrezzo(e.target.value);
               ricalcolaImporto(e.target.value, litri);
             }}
-            placeholder="es. 1,729"
+            placeholder="es. 2,00"
             required
           />
         </Field>

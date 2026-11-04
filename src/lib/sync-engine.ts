@@ -8,7 +8,7 @@ import {
   scaricaFoglio,
 } from "@/lib/foglio-google";
 import { refuels, vehicles } from "@/db/schema";
-import { INIZIO_CONTABILITA } from "@/lib/contabilita";
+import { INIZIO_CONTABILITA, prezzoCarburante } from "@/lib/contabilita";
 import { allineaScadenzaNoleggio } from "@/lib/scadenza-noleggio";
 import { eq } from "drizzle-orm";
 
@@ -278,7 +278,7 @@ export async function syncFromSheetData(rawText?: string): Promise<SyncResult> {
 
       // le spese si contano da INIZIO_CONTABILITA: i rifornimenti più vecchi del Foglio si saltano
       if (date && date >= INIZIO_CONTABILITA && litri > 0) {
-        const costo = (litri * 1.72).toFixed(2);
+        const costo = (litri * prezzoCarburante(date)).toFixed(2);
         vehicleRefuels.push({
           data: date,
           litri: litri.toFixed(2),
