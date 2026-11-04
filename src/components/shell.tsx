@@ -4,13 +4,15 @@ import {
   CalendarClock,
   Fuel,
   LayoutDashboard,
+  Search,
   Siren,
   Truck,
   Wrench,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import CercaTarga from "@/components/cerca-targa";
 import GithubSync from "@/components/github-sync";
 import SyncButton from "@/components/sync-button";
 
@@ -25,6 +27,25 @@ const NAV = [
 
 export default function Shell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const cercaRef = useRef<HTMLInputElement>(null);
+  const [cercaMobile, setCercaMobile] = useState(false);
+
+  // Ctrl+K (da qualunque pagina) apre la ricerca per targa
+  useEffect(() => {
+    function scorciatoia(e: KeyboardEvent) {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || e.key.toLowerCase() !== "k") return;
+      e.preventDefault();
+      const campo = cercaRef.current;
+      if (campo && campo.getClientRects().length > 0) {
+        campo.focus();
+        campo.select();
+      } else {
+        setCercaMobile(true);
+      }
+    }
+    window.addEventListener("keydown", scorciatoia);
+    return () => window.removeEventListener("keydown", scorciatoia);
+  }, []);
 
   const today = new Intl.DateTimeFormat("it-IT", {
     weekday: "long",
@@ -36,7 +57,7 @@ export default function Shell({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen">
       {/* Sidebar */}
-      <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col border-r border-white/[0.06] bg-ink-950 lg:flex">
+      <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col overflow-y-auto border-r border-white/[0.06] bg-ink-950 [scrollbar-color:rgba(255,255,255,0.14)_transparent] [scrollbar-width:thin] lg:flex">
         {/* Logo */}
         <div className="flex items-center gap-3 px-6 pb-6 pt-7">
           <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-volt-500 text-ink-950 shadow-[0_8px_24px_-8px_rgba(204,239,69,0.6)]">
@@ -50,6 +71,11 @@ export default function Shell({ children }: { children: ReactNode }) {
               Controllo automezzi
             </p>
           </div>
+        </div>
+
+        {/* Ricerca per targa */}
+        <div className="px-3 pb-4">
+          <CercaTarga tema="scuro" inputRef={cercaRef} />
         </div>
 
         {/* Nav */}
@@ -99,8 +125,8 @@ export default function Shell({ children }: { children: ReactNode }) {
           <GithubSync />
         </div>
 
-        {/* Footer */}
-        <div className="px-6 pb-6">
+        {/* Footer (nascosto sugli schermi bassi, per lasciare spazio a ricerca e pulsanti) */}
+        <div className="px-6 pb-6 [@media(max-height:799px)]:hidden">
           <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-4">
             <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-volt-500">
               Uso interno
@@ -114,14 +140,34 @@ export default function Shell({ children }: { children: ReactNode }) {
       </aside>
 
       {/* Header mobile */}
-      <div className="sticky top-0 z-30 flex items-center gap-3 border-b border-line bg-paper/90 px-4 py-3 backdrop-blur lg:hidden">
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-volt-500 text-ink-950">
-          <Truck className="h-4.5 w-4.5" strokeWidth={2.4} />
+      <div className="sticky top-0 z-30 border-b border-line bg-paper/90 backdrop-blur lg:hidden">
+        <div className="flex items-center gap-3 px-4 py-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-volt-500 text-ink-950">
+            <Truck className="h-4.5 w-4.5" strokeWidth={2.4} />
+          </div>
+          <p className="font-display text-base font-black uppercase tracking-tight">
+            Flotta<span className="text-volt-600">·</span>OS
+          </p>
+          <div className="ml-auto flex min-w-0 items-center gap-1">
+            <button
+              type="button"
+              aria-label="Cerca targa"
+              aria-expanded={cercaMobile}
+              onClick={() => setCercaMobile((v) => !v)}
+              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-colors ${
+                cercaMobile ? "bg-ink-950 text-volt-500" : "text-mute hover:text-ink-900"
+              }`}
+            >
+              <Search className="h-4 w-4" strokeWidth={2.4} />
+            </button>
+            <MobileNav pathname={pathname} />
+          </div>
         </div>
-        <p className="font-display text-base font-black uppercase tracking-tight">
-          Flotta<span className="text-volt-600">·</span>OS
-        </p>
-        <MobileNav pathname={pathname} />
+        {cercaMobile ? (
+          <div className="px-4 pb-3">
+            <CercaTarga tema="chiaro" autoFocus onChiudi={() => setCercaMobile(false)} />
+          </div>
+        ) : null}
       </div>
 
       {/* Contenuto */}
@@ -136,7 +182,7 @@ export default function Shell({ children }: { children: ReactNode }) {
 
 function MobileNav({ pathname }: { pathname: string }) {
   return (
-    <div className="ml-auto flex gap-1 overflow-x-auto">
+    <div className="flex min-w-0 gap-1 overflow-x-auto">
       {NAV.map((item) => {
         const active =
           item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
