@@ -4,7 +4,7 @@ import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
-import { deadlines, driverLogs, fines, maintenances, refuels, vehicles } from "@/db/schema";
+import { deadlines, driverLogs, fines, maintenances, refuels, tolls, vehicles } from "@/db/schema";
 import { dopoSalvataggioMezzo, riportaSulMezzo } from "@/lib/scadenza-noleggio";
 
 export type FormResult = { ok: boolean; error?: string; redirectTo?: string };
@@ -47,6 +47,7 @@ function touch() {
   revalidatePath("/manutenzioni");
   revalidatePath("/rifornimenti");
   revalidatePath("/multe");
+  revalidatePath("/pedaggi");
 }
 
 // ---------------------------------------------------------------------------
@@ -481,6 +482,80 @@ export async function toggleFinePaid(fineId: number) {
 
 export async function deleteFine(id: number) {
   const [row] = await db.delete(fines).where(eq(fines.id, id)).returning();
+  if (row) {
+    touch();
+    revalidatePath(`/mezzi/${row.vehicleId}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// PEDAGGI
+// ---------------------------------------------------------------------------
+
+function readTollForm(fd: FormData) {
+  const data = str(fd, "data");
+  const importo = num(fd, "importo");
+  if (!data || importo === null) {
+    return { error: "Data e importo sono obbligatori." as const };
+  }
+  if (importo <= 0) {
+    return { error: "L'importo deve essere maggiore di zero." as const };
+  }
+
+  return {
+    values: {
+      data,
+      entrata: str(fd, "entrata"),
+      uscita: str(fd, "uscita"),
+      importo: importo.toFixed(2),
+      note: str(fd, "note"),
+    },
+  };
+}
+
+export async function addToll(
+  vehicleId: number,
+  _prev: FormResult,
+  fd: FormData
+): Promise<FormResult> {
+  const { values, error } = readTollForm(fd);
+  if (error || !values) return { ok: false, error: error ?? "Dati non validi." };
+
+  await db.insert(tolls).values({ vehicleId, ...values });
+
+  touch();
+  revalidatePath(`/mezzi/${vehicleId}`);
+  return { ok: true };
+}
+
+/** Variante con selezione del mezzo dal form (pagina Pedaggi) */
+export async function addTollFromSelect(
+  _prev: FormResult,
+  fd: FormData
+): Promise<FormResult> {
+  const vehicleId = int(fd, "vehicleId");
+  if (!vehicleId) return { ok: false, error: "Seleziona il mezzo." };
+  return addToll(vehicleId, { ok: false }, fd);
+}
+
+export async function updateToll(
+  tollId: number,
+  _prev: FormResult,
+  fd: FormData
+): Promise<FormResult> {
+  const { values, error } = readTollForm(fd);
+  if (error || !values) return { ok: false, error: error ?? "Dati non validi." };
+
+  const [row] = await db.update(tolls).set(values).where(eq(tolls.id, tollId)).returning();
+  if (!row) return { ok: false, error: "Pedaggio non trovato." };
+
+  touch();
+  revalidatePath(`/mezzi/${row.vehicleId}`);
+  return { ok: true };
+}
+
+export async function deleteToll(id: number) {
+  const [row] = await db.delete(tolls).where(eq(tolls.id, id)).returning();
   if (row) {
     touch();
     revalidatePath(`/mezzi/${row.vehicleId}`);

@@ -1,10 +1,11 @@
 import { db, ensureSchema } from "./index";
-import { deadlines, driverLogs, fines, maintenances, refuels, vehicles } from "./schema";
+import { deadlines, driverLogs, fines, maintenances, refuels, tolls, vehicles } from "./schema";
 
 export async function clearAllData() {
   await ensureSchema();
   console.log("Cancellazione dati placeholder in corso...");
   await db.delete(fines);
+  await db.delete(tolls);
   await db.delete(refuels);
   await db.delete(maintenances);
   await db.delete(deadlines);

@@ -96,6 +96,19 @@ CREATE TABLE IF NOT EXISTS fines (
   note TEXT,
   created_at TEXT DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS tolls (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  vehicle_id INTEGER NOT NULL REFERENCES vehicles(id) ON DELETE CASCADE,
+  data TEXT NOT NULL,
+  entrata TEXT,
+  uscita TEXT,
+  importo TEXT NOT NULL,
+  note TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_tolls_data ON tolls(data);
+CREATE INDEX IF NOT EXISTS idx_tolls_vehicle ON tolls(vehicle_id, data);
 `;
 
 // Colonne aggiunte dopo la prima versione: nei database già esistenti (quello del PC

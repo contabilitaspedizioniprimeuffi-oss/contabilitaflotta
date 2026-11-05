@@ -73,6 +73,18 @@ export function fmtMese(iso: string | null | undefined): string {
   return new Intl.DateTimeFormat("it-IT", { month: "long", year: "numeric" }).format(new Date(y, m - 1, 1));
 }
 
+/** Tratta del pedaggio: "Napoli Nord → Caserta Sud" (o il solo casello indicato) */
+export function fmtTratta(entrata: string | null | undefined, uscita: string | null | undefined): string {
+  if (entrata && uscita) return `${entrata} → ${uscita}`;
+  return entrata || uscita || "—";
+}
+
+/** "2026-11" → "Novembre 2026" */
+export function fmtMeseTitolo(key: string): string {
+  const s = fmtMese(key);
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
 export function monthLabel(key: string): string {
   const [y, m] = key.split("-").map(Number);
   return new Intl.DateTimeFormat("it-IT", { month: "short" }).format(new Date(y, m - 1, 1));

@@ -7,6 +7,7 @@ import {
   Loader2,
   Pencil,
   Plus,
+  Route,
   Siren,
   Trash2,
   User,
@@ -22,7 +23,7 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
-import type { Deadline, DriverLog, Fine, Maintenance, Refuel } from "@/db/schema";
+import type { Deadline, DriverLog, Fine, Maintenance, Refuel, Toll } from "@/db/schema";
 import { prezzoCarburante } from "@/lib/contabilita";
 import {
   addDeadline,
@@ -31,13 +32,17 @@ import {
   addFineFromSelect,
   addMaintenance,
   addRefuel,
+  addToll,
+  addTollFromSelect,
   deleteDriverLog,
   deleteFine,
+  deleteToll,
   toggleFinePaid,
   updateDeadline,
   updateFine,
   updateMaintenance,
   updateRefuel,
+  updateToll,
   type FormResult,
 } from "@/lib/actions";
 import { currentMonthKey, fmtNum } from "@/lib/format";
@@ -647,6 +652,157 @@ export function DeleteFineButton({ id }: { id: number }) {
       action={deleteFine.bind(null, id)}
       label="Elimina multa"
       confirmText="Eliminare questa multa dal registro?"
+    />
+  );
+}
+
+// ---------------------------------------------------------------------------
+// PEDAGGI (aggiungi / modifica / elimina)
+// ---------------------------------------------------------------------------
+
+type MezzoDaScegliere = { id: number; targa: string; marca: string; modello: string };
+
+function TollForm({
+  vehicleId,
+  vehicles,
+  mezzoProposto,
+  initial,
+  onClose,
+}: {
+  vehicleId?: number;
+  vehicles?: MezzoDaScegliere[];
+  mezzoProposto?: number;
+  initial?: Toll;
+  onClose: () => void;
+}) {
+  const action: (p: FormResult, fd: FormData) => Promise<FormResult> = initial
+    ? updateToll.bind(null, initial.id)
+    : vehicleId
+      ? addToll.bind(null, vehicleId)
+      : addTollFromSelect;
+  const [state, formAction, pending] = useActionState(action, { ok: false } as FormResult);
+
+  useEffect(() => {
+    if (state.ok) onClose();
+  }, [state.ok, onClose]);
+
+  const proposto = mezzoProposto && vehicles?.some((v) => v.id === mezzoProposto) ? String(mezzoProposto) : "";
+
+  return (
+    <form action={formAction}>
+      <div className="grid grid-cols-2 gap-4">
+        {vehicles ? (
+          <div className="col-span-2">
+            <Field label="Mezzo *">
+              <select className="input" name="vehicleId" required defaultValue={proposto}>
+                <option value="" disabled>
+                  Seleziona mezzo…
+                </option>
+                {vehicles.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.targa} — {v.marca} {v.modello}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
+        ) : null}
+
+        <Field label="Data *">
+          <input className="input" type="date" name="data" defaultValue={initial?.data ?? todayIso()} required />
+        </Field>
+        <Field label="Importo (€) *">
+          <input
+            className="input font-mono"
+            type="number"
+            name="importo"
+            min={0.01}
+            step="0.01"
+            defaultValue={initial?.importo ?? undefined}
+            placeholder="es. 4,60"
+            required
+          />
+        </Field>
+        <Field label="Casello di entrata">
+          <input className="input" type="text" name="entrata" defaultValue={initial?.entrata ?? undefined} placeholder="es. Napoli Nord" />
+        </Field>
+        <Field label="Casello di uscita">
+          <input className="input" type="text" name="uscita" defaultValue={initial?.uscita ?? undefined} placeholder="es. Caserta Sud" />
+        </Field>
+        <div className="col-span-2">
+          <Field label="Note">
+            <input className="input" type="text" name="note" defaultValue={initial?.note ?? undefined} placeholder="es. consegne zona Salerno" />
+          </Field>
+        </div>
+      </div>
+      <ErrorBox msg={state.error} />
+      <SubmitRow pending={pending} onClose={onClose} cta={initial ? "Salva modifiche" : "Registra pedaggio"} />
+    </form>
+  );
+}
+
+/** Nella pagina Pedaggi (con scelta del mezzo) il pulsante è quello principale; nella scheda mezzo è secondario */
+export function AddTollDialog({
+  vehicleId,
+  vehicles,
+  mezzoProposto,
+  principale = false,
+}: {
+  vehicleId?: number;
+  vehicles?: MezzoDaScegliere[];
+  mezzoProposto?: number;
+  principale?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const close = () => setOpen(false);
+  return (
+    <>
+      {principale ? (
+        <button onClick={() => setOpen(true)} className="btn-primary">
+          <Plus className="h-4 w-4" strokeWidth={2.6} /> Nuovo pedaggio
+        </button>
+      ) : (
+        <button onClick={() => setOpen(true)} className="btn-ghost h-11!">
+          <Route className="h-4 w-4" strokeWidth={2.2} /> Pedaggio
+        </button>
+      )}
+      {open ? (
+        <ModalShell title="Registra pedaggio" icon={Route} onClose={close}>
+          <TollForm vehicleId={vehicleId} vehicles={vehicles} mezzoProposto={mezzoProposto} onClose={close} />
+        </ModalShell>
+      ) : null}
+    </>
+  );
+}
+
+export function EditTollButton({ initial }: { initial: Toll }) {
+  const [open, setOpen] = useState(false);
+  const close = () => setOpen(false);
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className="flex h-8 w-8 items-center justify-center rounded-full text-mute transition-colors hover:bg-ink-950/5 hover:text-ink-950"
+        title="Modifica pedaggio"
+        aria-label="Modifica pedaggio"
+      >
+        <Pencil className="h-4 w-4" />
+      </button>
+      {open ? (
+        <ModalShell title="Modifica pedaggio" icon={Route} onClose={close}>
+          <TollForm initial={initial} onClose={close} />
+        </ModalShell>
+      ) : null}
+    </>
+  );
+}
+
+export function DeleteTollButton({ id }: { id: number }) {
+  return (
+    <DeleteButton
+      action={deleteToll.bind(null, id)}
+      label="Elimina pedaggio"
+      confirmText="Eliminare questo pedaggio?"
     />
   );
 }

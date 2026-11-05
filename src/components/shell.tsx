@@ -4,6 +4,7 @@ import {
   CalendarClock,
   Fuel,
   LayoutDashboard,
+  Route,
   Search,
   Siren,
   Truck,
@@ -22,6 +23,7 @@ const NAV = [
   { href: "/scadenze", label: "Scadenze", sub: "assicurazioni e bolli", icon: CalendarClock },
   { href: "/manutenzioni", label: "Manutenzioni", sub: "tagliandi e riparazioni", icon: Wrench },
   { href: "/rifornimenti", label: "Rifornimenti", sub: "carburante e consumi", icon: Fuel },
+  { href: "/pedaggi", label: "Pedaggi", sub: "caselli e autostrade", icon: Route },
   { href: "/multe", label: "Multe", sub: "verbali e punti", icon: Siren },
 ];
 
@@ -125,8 +127,8 @@ export default function Shell({ children }: { children: ReactNode }) {
           <GithubSync />
         </div>
 
-        {/* Footer (nascosto sugli schermi bassi, per lasciare spazio a ricerca e pulsanti) */}
-        <div className="px-6 pb-6 [@media(max-height:799px)]:hidden">
+        {/* Footer (nascosto sugli schermi bassi, per lasciare spazio a menu e pulsanti) */}
+        <div className="px-6 pb-6 [@media(max-height:859px)]:hidden">
           <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-4">
             <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-volt-500">
               Uso interno

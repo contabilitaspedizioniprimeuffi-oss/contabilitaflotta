@@ -12,6 +12,7 @@ import {
   Hammer,
   NotebookText,
   Pencil,
+  Route,
   ShieldAlert,
   ShieldCheck,
   ShoppingBag,
@@ -28,13 +29,16 @@ import {
   AddFineDialog,
   AddMaintenanceDialog,
   AddRefuelDialog,
+  AddTollDialog,
   DeleteButton,
   DeleteDriverLogButton,
   DeleteFineButton,
+  DeleteTollButton,
   EditDeadlineButton,
   EditFineButton,
   EditMaintenanceButton,
   EditRefuelButton,
+  EditTollButton,
   FinePaidToggle,
 } from "@/components/dialogs";
 import Plate from "@/components/plate";
@@ -59,6 +63,8 @@ import { INIZIO_CONTABILITA } from "@/lib/contabilita";
 import { computeConsumption, getVehicleBundle, nextServiceInfo } from "@/lib/data";
 import {
   DAY_MS,
+  currentMonthKey,
+  fmtTratta,
   fmtDate,
   fmtDateLong,
   fmtEur,
@@ -171,7 +177,7 @@ export default async function SchedaMezzo(props: { params: Promise<{ id: string 
 
   const bundle = await getVehicleBundle(vid);
   if (!bundle) notFound();
-  const { vehicle: v, maintenances: mans, refuels: refs, deadlines: dls, fines: fns, driverLogs: logs } = bundle;
+  const { vehicle: v, maintenances: mans, refuels: refs, deadlines: dls, fines: fns, driverLogs: logs, tolls: pdg } = bundle;
 
   const cons = computeConsumption(refs);
   const service = nextServiceInfo(mans, v.kmAttuali);
@@ -179,7 +185,12 @@ export default async function SchedaMezzo(props: { params: Promise<{ id: string 
   const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const spesa30 =
     refs.filter((r) => r.data >= cutoff).reduce((s, r) => s + Number(r.costo), 0) +
-    mans.filter((m) => m.data >= cutoff).reduce((s, m) => s + Number(m.costo ?? 0), 0);
+    mans.filter((m) => m.data >= cutoff).reduce((s, m) => s + Number(m.costo ?? 0), 0) +
+    pdg.filter((p) => p.data >= cutoff).reduce((s, p) => s + Number(p.importo), 0);
+
+  const meseCorrente = currentMonthKey();
+  const pedaggiMese = pdg.filter((p) => p.data.startsWith(meseCorrente)).reduce((s, p) => s + Number(p.importo), 0);
+  const pedaggiTot = pdg.reduce((s, p) => s + Number(p.importo), 0);
 
   const spesaManutTot = mans.reduce((s, m) => s + Number(m.costo ?? 0), 0);
 
@@ -537,6 +548,58 @@ export default async function SchedaMezzo(props: { params: Promise<{ id: string 
       ),
     },
     {
+      key: "pedaggi",
+      label: "Pedaggi",
+      icon: "route",
+      count: pdg.length,
+      content: (
+        <SectionCard
+          title={
+            pdg.length > 0
+              ? `Pedaggi · ${fmtMese(meseCorrente)}: ${fmtEur(pedaggiMese, 2)} · in tutto ${fmtEur(pedaggiTot, 2)}`
+              : "Pedaggi"
+          }
+          pad={false}
+        >
+          {pdg.length === 0 ? (
+            <div className="p-5">
+              <Empty icon={Route} title="Nessun pedaggio" sub="Registra i pedaggi con il pulsante «Pedaggio» qui sopra." />
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[640px]">
+                <thead>
+                  <tr className="border-b border-line">
+                    <th className="th">Data</th>
+                    <th className="th">Tratta</th>
+                    <th className="th">Note</th>
+                    <th className="th text-right">Importo</th>
+                    <th className="th" />
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-line">
+                  {pdg.map((p) => (
+                    <tr key={p.id} className="transition-colors hover:bg-paper/60">
+                      <td className="td whitespace-nowrap font-semibold">{fmtDate(p.data)}</td>
+                      <td className="td font-semibold">{fmtTratta(p.entrata, p.uscita)}</td>
+                      <td className="td max-w-[260px] truncate text-xs text-mute">{p.note ?? "—"}</td>
+                      <td className="td text-right font-mono text-sm font-bold">{fmtEur(p.importo, 2)}</td>
+                      <td className="td">
+                        <div className="flex items-center justify-end gap-1">
+                          <EditTollButton initial={p} />
+                          <DeleteTollButton id={p.id} />
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </SectionCard>
+      ),
+    },
+    {
       key: "multe",
       label: "Multe",
       icon: "siren",
@@ -687,6 +750,7 @@ export default async function SchedaMezzo(props: { params: Promise<{ id: string 
 
         <div className="flex flex-wrap items-center gap-2 px-6 py-4 sm:px-8">
           <AddRefuelDialog vehicleId={v.id} />
+          <AddTollDialog vehicleId={v.id} />
           <AddMaintenanceDialog vehicleId={v.id} />
           <AddDeadlineDialog vehicleId={v.id} />
           <AddFineDialog vehicleId={v.id} />
@@ -725,7 +789,7 @@ export default async function SchedaMezzo(props: { params: Promise<{ id: string 
           value={cons.eurPerKm ? fmtEur(cons.eurPerKm, 2) : "—"}
           sub={cons.eurPerLiter ? `prezzo medio ${cons.eurPerLiter.toFixed(3)} €/l` : undefined}
         />
-        <StatCard icon={Banknote} label="Uscite 30 giorni" value={fmtEur(spesa30)} sub="carburante + manutenzioni" />
+        <StatCard icon={Banknote} label="Uscite 30 giorni" value={fmtEur(spesa30)} sub="carburante, manutenzioni e pedaggi" />
         <StatCard
           icon={Siren}
           label="Multe da pagare"

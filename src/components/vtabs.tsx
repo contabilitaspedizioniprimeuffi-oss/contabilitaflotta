@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarClock, Fuel, History, Info, Siren, User, Wrench } from "lucide-react";
+import { CalendarClock, Fuel, History, Info, Route, Siren, User, Wrench } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
 const ICONS = {
@@ -11,6 +11,7 @@ const ICONS = {
   history: History,
   siren: Siren,
   user: User,
+  route: Route,
 } as const;
 
 export type TabIcon = keyof typeof ICONS;

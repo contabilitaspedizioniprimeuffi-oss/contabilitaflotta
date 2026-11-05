@@ -127,6 +127,22 @@ export const fines = sqliteTable("fines", {
 });
 
 // ---------------------------------------------------------------------------
+// PEDAGGI (autostrade)
+// ---------------------------------------------------------------------------
+export const tolls = sqliteTable("tolls", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  vehicleId: integer("vehicle_id")
+    .notNull()
+    .references(() => vehicles.id, { onDelete: "cascade" }),
+  data: text("data").notNull(),
+  entrata: text("entrata"), // casello di entrata
+  uscita: text("uscita"), // casello di uscita
+  importo: text("importo").notNull(),
+  note: text("note"),
+  createdAt: text("created_at").$defaultFn(() => new Date().toISOString()),
+});
+
+// ---------------------------------------------------------------------------
 // RELAZIONI
 // ---------------------------------------------------------------------------
 export const vehiclesRelations = relations(vehicles, ({ many }) => ({
@@ -134,6 +150,7 @@ export const vehiclesRelations = relations(vehicles, ({ many }) => ({
   refuels: many(refuels),
   deadlines: many(deadlines),
   fines: many(fines),
+  tolls: many(tolls),
   driverLogs: many(driverLogs),
 }));
 
@@ -172,9 +189,17 @@ export const finesRelations = relations(fines, ({ one }) => ({
   }),
 }));
 
+export const tollsRelations = relations(tolls, ({ one }) => ({
+  vehicle: one(vehicles, {
+    fields: [tolls.vehicleId],
+    references: [vehicles.id],
+  }),
+}));
+
 export type Vehicle = typeof vehicles.$inferSelect;
 export type Maintenance = typeof maintenances.$inferSelect;
 export type Refuel = typeof refuels.$inferSelect;
 export type Deadline = typeof deadlines.$inferSelect;
 export type Fine = typeof fines.$inferSelect;
 export type DriverLog = typeof driverLogs.$inferSelect;
+export type Toll = typeof tolls.$inferSelect;

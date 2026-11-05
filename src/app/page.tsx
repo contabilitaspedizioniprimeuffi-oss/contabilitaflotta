@@ -8,6 +8,7 @@ import {
   Gauge,
   Hammer,
   Plus,
+  Route,
   ShieldCheck,
   Siren,
   Truck,
@@ -26,6 +27,7 @@ import {
   listFinesJoin,
   listRecentMaintenances,
   listRefuels,
+  listTollsSince,
   listVehicles,
 } from "@/lib/data";
 import { INIZIO_CONTABILITA } from "@/lib/contabilita";
@@ -58,12 +60,13 @@ const MANUT_ICON: Record<string, LucideIcon> = {
 };
 
 export default async function Dashboard() {
-  const [vs, refs, recentMans, dls, allFines] = await Promise.all([
+  const [vs, refs, recentMans, dls, allFines, pedaggiDalMese] = await Promise.all([
     listVehicles(),
     listRefuels(),
     listRecentMaintenances(6),
     listDeadlinesJoin(),
     listFinesJoin(null, null),
+    listTollsSince(`${currentMonthKey()}-01`),
   ]);
 
   const attivi = vs.filter((v) => v.stato === "attivo").length;
@@ -132,7 +135,12 @@ export default async function Dashboard() {
     .reduce((s, x) => s + Number(x.f.importo), 0);
   const piuVecchia = multeDaPagare[multeDaPagare.length - 1];
 
-  const totaleMese = spesaFuelMese + spesaManutMese + canoniMensili;
+  // --- pedaggi del mese
+  const pedaggiMese = pedaggiDalMese
+    .filter((p) => monthKey(p.data) === cur)
+    .reduce((s, p) => s + Number(p.importo), 0);
+
+  const totaleMese = spesaFuelMese + spesaManutMese + canoniMensili + pedaggiMese;
 
   // --- consumi per mezzo
   const consMap = consumptionByVehicle(refs);
@@ -238,6 +246,12 @@ export default async function Dashboard() {
                 <Fuel className="h-4 w-4" /> Carburante
               </span>
               <span className="font-mono text-sm font-bold">{fmtEur(spesaFuelMese)}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-2 text-sm text-mute">
+                <Route className="h-4 w-4" /> Pedaggi
+              </span>
+              <span className="font-mono text-sm font-bold">{fmtEur(pedaggiMese)}</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="flex items-center gap-2 text-sm text-mute">
