@@ -4,6 +4,7 @@ import {
   deadlines,
   driverLogs,
   fines,
+  importazioniPedaggi,
   maintenances,
   refuels,
   tolls,
@@ -193,6 +194,49 @@ export async function listTollMonths(): Promise<string[]> {
   const mese = sql<string>`substr(${tolls.dataUscita}, 1, 7)`;
   const rows = await db.selectDistinct({ mese }).from(tolls).orderBy(desc(mese));
   return rows.map((r) => r.mese).filter((m) => typeof m === "string" && /^\d{4}-\d{2}$/.test(m));
+}
+
+/** Importazioni dei pedaggi da JSON (le più recenti), con quanti pedaggi ne restano nel programma */
+export type ImportazioneFatta = {
+  id: number;
+  fatturaNumero: string;
+  fatturaData: string | null;
+  periodoDal: string | null;
+  periodoAl: string | null;
+  fileNome: string | null;
+  il: string;
+  pedaggi: number;
+  totale: number;
+};
+
+export async function listImportazioniPedaggi(limite = 8): Promise<ImportazioneFatta[]> {
+  const rows = await db
+    .select({
+      id: importazioniPedaggi.id,
+      fatturaNumero: importazioniPedaggi.fatturaNumero,
+      fatturaData: importazioniPedaggi.fatturaData,
+      periodoDal: importazioniPedaggi.periodoDal,
+      periodoAl: importazioniPedaggi.periodoAl,
+      fileNome: importazioniPedaggi.fileNome,
+      createdAt: importazioniPedaggi.createdAt,
+      pedaggi: sql<number>`(SELECT count(*) FROM tolls t WHERE t.importazione_id = importazioni_pedaggi.id)`,
+      importi: sql<string | null>`(SELECT group_concat(t.importo, ';') FROM tolls t WHERE t.importazione_id = importazioni_pedaggi.id)`,
+    })
+    .from(importazioniPedaggi)
+    .orderBy(desc(importazioniPedaggi.id))
+    .limit(limite);
+  return rows.map((r) => ({
+    id: r.id,
+    fatturaNumero: r.fatturaNumero ?? "",
+    fatturaData: r.fatturaData,
+    periodoDal: r.periodoDal,
+    periodoAl: r.periodoAl,
+    fileNome: r.fileNome,
+    il: r.createdAt ?? "",
+    pedaggi: Number(r.pedaggi),
+    // somma fatta in centesimi (come nel resto del programma), non in SQLite
+    totale: (r.importi ? r.importi.split(";") : []).reduce((c, x) => c + Math.round(Number(x) * 100), 0) / 100,
+  }));
 }
 
 export async function listTollsSince(isoDate: string): Promise<Toll[]> {

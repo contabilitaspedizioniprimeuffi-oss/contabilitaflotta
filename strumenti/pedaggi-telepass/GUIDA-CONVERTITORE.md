@@ -93,4 +93,4 @@ Il programma rifarà questi controlli al caricamento:
 - Gli importi si vedranno così come sono nel file, cioè IVA inclusa.
 - **Passaggi senza targa:** verranno assegnati al mezzo che di solito usa quel dispositivo e segnati con un **asterisco** (*). La targa si potrà cambiare.
 - **Targhe non presenti in anagrafica:** prima di importare chiederà se aggiungerle o scartare i loro pedaggi.
-- **La stessa fattura** non si potrà caricare due volte.
+- **La stessa fattura:** se è già stata caricata il programma avvisa e non crea mai doppioni (al massimo aggiunge, dopo conferma, i passaggi che mancano).

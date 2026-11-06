@@ -5,7 +5,7 @@ import { AddTollDialog } from "@/components/dialogs";
 import Plate from "@/components/plate";
 import TabellaPedaggi from "@/components/tabella-pedaggi";
 import { Empty, PageHeader, SectionCard, StatCard } from "@/components/ui";
-import { listTollMonths, listTollsJoin, listVehicles } from "@/lib/data";
+import { listImportazioniPedaggi, listTollMonths, listTollsJoin, listVehicles } from "@/lib/data";
 import { currentMonthKey, fmtDate, fmtEur, fmtMese, fmtMeseTitolo, fmtNum, fmtTratta } from "@/lib/format";
 import { importoPedaggio, totalePedaggi } from "@/lib/pedaggi";
 
@@ -35,10 +35,11 @@ export default async function PedaggiPage(props: {
         ? meseScelto
         : meseCorrente;
 
-  const [rows, vs, mesiConPedaggi] = await Promise.all([
+  const [rows, vs, mesiConPedaggi, importazioni] = await Promise.all([
     listTollsJoin(vid, mese),
     listVehicles(),
     listTollMonths(),
+    listImportazioniPedaggi(),
   ]);
   const opzioniMese = Array.from(new Set([meseCorrente, ...mesiConPedaggi, ...(mese ? [mese] : [])]))
     .sort()
@@ -90,7 +91,7 @@ export default async function PedaggiPage(props: {
         sub="Passaggi ai caselli di ogni mezzo, con gli stessi campi del dettaglio Telepass. Importi IVA inclusa, come nel PDF."
         actions={
           <>
-            <CaricaJsonPedaggi />
+            <CaricaJsonPedaggi importazioni={importazioni} />
             {vs.length > 0 ? (
               <AddTollDialog vehicles={mezziSelezionabili} mezzoProposto={vid ?? undefined} principale />
             ) : null}
