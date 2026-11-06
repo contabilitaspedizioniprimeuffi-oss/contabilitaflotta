@@ -1,0 +1,122 @@
+{
+  "formato": "pedaggi-telepass",
+  "versione": 1,
+  "fattura": {
+    "numero": "900000001",
+    "data": "2026-11-16",
+    "periodo_dal": "2026-11-01",
+    "periodo_al": "2026-11-15",
+    "totale": 9.35
+  },
+  "dispositivi": [
+    {
+      "codice": "1A2B3C4D/6389160000000000001F",
+      "totale": 4.80,
+      "passaggi": [
+        {
+          "id_prenotazione": "",
+          "targa": "AA111AA",
+          "data_entrata": "2026-11-03",
+          "ora_entrata": "07:42:10",
+          "stazione_entrata": "NAPOLI NORD",
+          "data_uscita": "2026-11-03",
+          "ora_uscita": "08:15:51",
+          "stazione_uscita": "CASTELLAMMARE DI STABIA",
+          "classe": "B",
+          "srv": "PED",
+          "importo": 3.10
+        },
+        {
+          "id_prenotazione": "",
+          "targa": "AA111AA",
+          "data_entrata": "",
+          "ora_entrata": "",
+          "stazione_entrata": "DIREZIONE USCITA",
+          "data_uscita": "2026-11-04",
+          "ora_uscita": "18:12:09",
+          "stazione_uscita": "CASERTA SUD",
+          "classe": "B",
+          "srv": "PED",
+          "importo": 1.70
+        }
+      ]
+    },
+    {
+      "codice": "5E6F7A8B/6389160000000000002F",
+      "totale": 3.15,
+      "passaggi": [
+        {
+          "id_prenotazione": "",
+          "targa": "BB222BB",
+          "data_entrata": "",
+          "ora_entrata": "",
+          "stazione_entrata": "DIREZIONE ENTRATA",
+          "data_uscita": "2026-11-05",
+          "ora_uscita": "09:03:27",
+          "stazione_uscita": "VOMERO",
+          "classe": "B",
+          "srv": "PED",
+          "importo": 1.05
+        },
+        {
+          "id_prenotazione": "",
+          "targa": "",
+          "data_entrata": "",
+          "ora_entrata": "",
+          "stazione_entrata": "DIREZIONE ENTRATA",
+          "data_uscita": "2026-11-06",
+          "ora_uscita": "17:48:02",
+          "stazione_uscita": "FUORIGROTTA",
+          "classe": "B",
+          "srv": "PED",
+          "importo": 1.05
+        },
+        {
+          "id_prenotazione": "",
+          "targa": "BB222BB",
+          "data_entrata": "",
+          "ora_entrata": "",
+          "stazione_entrata": "DIREZIONE USCITA",
+          "data_uscita": "2026-11-07",
+          "ora_uscita": "12:30:44",
+          "stazione_uscita": "CAPODICHINO",
+          "classe": "2",
+          "srv": "PED",
+          "importo": 1.05
+        }
+      ]
+    },
+    {
+      "codice": "9C0D1E2F/6389160000000000003F",
+      "totale": 1.40,
+      "passaggi": [
+        {
+          "id_prenotazione": "",
+          "targa": "CC333CC",
+          "data_entrata": "2026-11-10",
+          "ora_entrata": "09:15:00",
+          "stazione_entrata": "POMPEI EST",
+          "data_uscita": "2026-11-10",
+          "ora_uscita": "09:31:44",
+          "stazione_uscita": "TORRE DEL GRECO",
+          "classe": "A",
+          "srv": "PED",
+          "importo": 2.30
+        },
+        {
+          "id_prenotazione": "",
+          "targa": "CC333CC",
+          "data_entrata": "2026-11-10",
+          "ora_entrata": "09:15:00",
+          "stazione_entrata": "POMPEI EST-SCONTO",
+          "data_uscita": "2026-11-10",
+          "ora_uscita": "09:31:44",
+          "stazione_uscita": "TORRE DEL GRECO-SCONTO",
+          "classe": "A",
+          "srv": "SA3",
+          "importo": -0.90
+        }
+      ]
+    }
+  ]
+}

@@ -81,6 +81,8 @@ Lo script chiede una conferma e salva prima una copia del database nella cartell
 
 6. **Multe e infrazioni (`/multe`)**: sanzioni con punti patente, conducente, importo e stato del pagamento.
 
+7. **Pedaggi (`/pedaggi`)**: passaggi ai caselli con gli stessi campi del dettaglio Telepass e importi IVA inclusa come nel PDF; filtri per mezzo e mese e totale per targa. Il file JSON da caricare è descritto in [`strumenti/pedaggi-telepass/GUIDA-CONVERTITORE.md`](strumenti/pedaggi-telepass/GUIDA-CONVERTITORE.md) (esempio: `esempio-input-atteso.json`).
+
 ---
 
 ## 🛠️ Sviluppo
