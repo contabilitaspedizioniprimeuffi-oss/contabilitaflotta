@@ -492,8 +492,8 @@ export async function deleteFine(id: number) {
 // PEDAGGI
 // ---------------------------------------------------------------------------
 
-// Stessi campi del dettaglio Telepass. L'importo è IVA esclusa (fino a 4 decimali, così
-// riportando l'IVA si ritrova l'importo esatto); può essere negativo (sconti, rimborsi).
+// Stessi campi del dettaglio Telepass. L'importo è IVA inclusa, come stampato nel PDF;
+// può essere negativo (sconti, rimborsi).
 const DATA_ISO = /^\d{4}-\d{2}-\d{2}$/;
 
 /** "9:05" / "09:05:30" → "09:05:00" / "09:05:30" */
@@ -520,10 +520,6 @@ function readTollForm(fd: FormData) {
   if (dataEntrata && !DATA_ISO.test(dataEntrata)) {
     return { error: "La data di entrata non è valida." as const };
   }
-  const iva = num(fd, "iva") ?? 22;
-  if (iva < 0 || iva > 100) {
-    return { error: "L'IVA deve essere una percentuale tra 0 e 100." as const };
-  }
 
   return {
     values: {
@@ -537,8 +533,7 @@ function readTollForm(fd: FormData) {
       stazioneUscita: str(fd, "stazioneUscita"),
       classe: maiuscolo(fd, "classe"),
       servizio: maiuscolo(fd, "servizio"),
-      importo: String(Number(importo.toFixed(4))),
-      iva: String(Number(iva.toFixed(2))),
+      importo: importo.toFixed(2),
     },
   };
 }
@@ -576,11 +571,26 @@ export async function updateToll(
   const { values, error } = readTollForm(fd);
   if (error || !values) return { ok: false, error: error ?? "Dati non validi." };
 
-  const [row] = await db.update(tolls).set(values).where(eq(tolls.id, tollId)).returning();
+  const [prima] = await db.select({ vehicleId: tolls.vehicleId }).from(tolls).where(eq(tolls.id, tollId));
+  if (!prima) return { ok: false, error: "Pedaggio non trovato." };
+
+  // Si può anche cambiare la targa (es. passaggio senza targa nel file assegnato al mezzo sbagliato)
+  const nuovoMezzo = int(fd, "vehicleId");
+  if (nuovoMezzo !== null) {
+    const [mezzo] = await db.select({ id: vehicles.id }).from(vehicles).where(eq(vehicles.id, nuovoMezzo));
+    if (!mezzo) return { ok: false, error: "Mezzo non trovato." };
+  }
+
+  const [row] = await db
+    .update(tolls)
+    .set({ ...values, ...(nuovoMezzo !== null ? { vehicleId: nuovoMezzo } : {}) })
+    .where(eq(tolls.id, tollId))
+    .returning();
   if (!row) return { ok: false, error: "Pedaggio non trovato." };
 
   touch();
-  revalidatePath(`/mezzi/${row.vehicleId}`);
+  revalidatePath(`/mezzi/${prima.vehicleId}`);
+  if (row.vehicleId !== prima.vehicleId) revalidatePath(`/mezzi/${row.vehicleId}`);
   return { ok: true };
 }
 

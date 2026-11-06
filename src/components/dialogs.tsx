@@ -16,7 +16,9 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import {
+  createContext,
   useActionState,
+  useContext,
   useEffect,
   useState,
   type FormEvent,
@@ -45,8 +47,7 @@ import {
   updateToll,
   type FormResult,
 } from "@/lib/actions";
-import { currentMonthKey, fmtEur, fmtNum } from "@/lib/format";
-import { importoConIva, IVA_PEDAGGI_PREDEFINITA } from "@/lib/pedaggi";
+import { currentMonthKey, fmtNum } from "@/lib/format";
 
 // ---------------------------------------------------------------------------
 // Guscio modale
@@ -661,7 +662,14 @@ export function DeleteFineButton({ id }: { id: number }) {
 // PEDAGGI (aggiungi / modifica / elimina)
 // ---------------------------------------------------------------------------
 
-type MezzoDaScegliere = { id: number; targa: string; marca: string; modello: string };
+export type MezzoDaScegliere = { id: number; targa: string; marca: string; modello: string; venduto?: boolean };
+
+// Elenco dei mezzi per cambiare la targa di un pedaggio: la tabella lo passa una volta sola
+const MezziPedaggiContext = createContext<MezzoDaScegliere[] | null>(null);
+
+export function MezziPerPedaggi({ mezzi, children }: { mezzi: MezzoDaScegliere[]; children: ReactNode }) {
+  return <MezziPedaggiContext.Provider value={mezzi}>{children}</MezziPedaggiContext.Provider>;
+}
 
 function TollForm({
   vehicleId,
@@ -687,28 +695,37 @@ function TollForm({
     if (state.ok) onClose();
   }, [state.ok, onClose]);
 
-  const proposto = mezzoProposto && vehicles?.some((v) => v.id === mezzoProposto) ? String(mezzoProposto) : "";
-
-  // Importo IVA esclusa + aliquota: l'importo IVA inclusa si calcola mentre si scrive
-  const [importo, setImporto] = useState(initial ? String(Number(initial.importo)) : "");
-  const [iva, setIva] = useState(initial?.iva ?? String(IVA_PEDAGGI_PREDEFINITA));
-  const netto = Number(importo.replace(",", "."));
-  const lordo =
-    importo.trim() !== "" && Number.isFinite(netto) ? importoConIva(netto, iva.replace(",", ".")) : null;
+  const proposto = initial
+    ? String(initial.vehicleId)
+    : mezzoProposto && vehicles?.some((v) => v.id === mezzoProposto)
+      ? String(mezzoProposto)
+      : "";
+  // I mezzi venduti si vedono solo se il pedaggio è già loro
+  const scelta = vehicles?.filter((v) => !v.venduto || v.id === initial?.vehicleId);
 
   return (
     <form action={formAction}>
       <div className="grid grid-cols-3 gap-4">
-        {vehicles ? (
+        {initial?.targaDalDispositivo ? (
+          <p className="col-span-3 flex items-start gap-2.5 rounded-2xl border border-amber/30 bg-amber/10 px-4 py-3 text-sm text-ink-900">
+            <span className="font-mono text-lg font-black leading-none text-amber">*</span>
+            <span>
+              Nel file Telepass questo passaggio non aveva la targa: il programma ha messo quella che di solito usa il
+              dispositivo. Se è sbagliata, scegli quella giusta qui sotto.
+            </span>
+          </p>
+        ) : null}
+        {scelta ? (
           <div className="col-span-3">
             <Field label="Targa *">
               <select className="input" name="vehicleId" required defaultValue={proposto}>
                 <option value="" disabled>
                   Seleziona mezzo…
                 </option>
-                {vehicles.map((v) => (
+                {scelta.map((v) => (
                   <option key={v.id} value={v.id}>
                     {v.targa} — {v.marca} {v.modello}
+                    {v.venduto ? " (venduto)" : ""}
                   </option>
                 ))}
               </select>
@@ -754,31 +771,20 @@ function TollForm({
         <Field label="SRV (servizio)">
           <input className="input font-mono uppercase" type="text" name="servizio" defaultValue={initial ? (initial.servizio ?? undefined) : "PED"} placeholder="es. PED" />
         </Field>
-        <Field label="IVA %">
-          <input className="input font-mono" type="number" name="iva" min={0} max={100} step="0.01" value={iva} onChange={(e) => setIva(e.target.value)} />
-        </Field>
-        <Field label="Importo IVA esclusa (€) *">
+        <Field label="Importo IVA inclusa (€) *">
           <input
             className="input font-mono"
             type="number"
             name="importo"
-            step="0.0001"
-            value={importo}
-            onChange={(e) => setImporto(e.target.value)}
-            placeholder="es. 1,3934"
+            step="0.01"
+            defaultValue={initial ? Number(initial.importo).toFixed(2) : undefined}
+            placeholder="es. 1,70"
             required
           />
         </Field>
-        <div className="col-span-2">
-          <Field label="Importo IVA inclusa">
-            <div className="input flex items-center bg-paper! font-mono font-bold">
-              {lordo === null ? <span className="font-normal text-mute">si calcola da solo</span> : fmtEur(lordo, 2)}
-            </div>
-          </Field>
-        </div>
       </div>
       <p className="mt-3 text-xs text-mute">
-        Nel programma i pedaggi si vedono e si sommano sempre con l&apos;IVA inclusa. Gli importi negativi (sconti, rimborsi) sono ammessi.
+        L&apos;importo è IVA inclusa, come nel dettaglio Telepass. Gli importi negativi (sconti, rimborsi) sono ammessi.
       </p>
       <ErrorBox msg={state.error} />
       <SubmitRow pending={pending} onClose={onClose} cta={initial ? "Salva modifiche" : "Registra pedaggio"} />
@@ -821,6 +827,7 @@ export function AddTollDialog({
 }
 
 export function EditTollButton({ initial }: { initial: Toll }) {
+  const mezzi = useContext(MezziPedaggiContext);
   const [open, setOpen] = useState(false);
   const close = () => setOpen(false);
   return (
@@ -835,7 +842,7 @@ export function EditTollButton({ initial }: { initial: Toll }) {
       </button>
       {open ? (
         <ModalShell title="Modifica pedaggio" icon={Route} onClose={close} wide>
-          <TollForm initial={initial} onClose={close} />
+          <TollForm initial={initial} vehicles={mezzi ?? undefined} onClose={close} />
         </ModalShell>
       ) : null}
     </>

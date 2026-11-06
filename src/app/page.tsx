@@ -31,7 +31,7 @@ import {
   listVehicles,
 } from "@/lib/data";
 import { INIZIO_CONTABILITA } from "@/lib/contabilita";
-import { totaleConIva } from "@/lib/pedaggi";
+import { totalePedaggi } from "@/lib/pedaggi";
 import {
   fmtEur,
   fmtMese,
@@ -137,7 +137,7 @@ export default async function Dashboard() {
   const piuVecchia = multeDaPagare[multeDaPagare.length - 1];
 
   // --- pedaggi del mese (IVA inclusa)
-  const pedaggiMese = totaleConIva(pedaggiDalMese.filter((p) => monthKey(p.dataUscita) === cur));
+  const pedaggiMese = totalePedaggi(pedaggiDalMese.filter((p) => monthKey(p.dataUscita) === cur));
 
   const totaleMese = spesaFuelMese + spesaManutMese + canoniMensili + pedaggiMese;
 

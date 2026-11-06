@@ -111,7 +111,7 @@ CREATE TABLE IF NOT EXISTS tolls (
   classe TEXT,
   servizio TEXT,
   importo TEXT NOT NULL,
-  iva TEXT,
+  targa_dal_dispositivo INTEGER NOT NULL DEFAULT 0,
   created_at TEXT DEFAULT (datetime('now'))
 );
 `;
@@ -142,7 +142,7 @@ const COLONNE_AGGIUNTE: { tabella: string; colonna: string; tipo: string }[] = [
   { tabella: "tolls", colonna: "ora_uscita", tipo: "TEXT" },
   { tabella: "tolls", colonna: "classe", tipo: "TEXT" },
   { tabella: "tolls", colonna: "servizio", tipo: "TEXT" },
-  { tabella: "tolls", colonna: "iva", tipo: "TEXT" },
+  { tabella: "tolls", colonna: "targa_dal_dispositivo", tipo: "INTEGER NOT NULL DEFAULT 0" },
 ];
 
 // Sistemazioni dei dati da fare una volta sola (ricordate nella tabella "migrazioni").
@@ -218,18 +218,35 @@ const SISTEMAZIONI: { nome: string; istruzioni: string[] }[] = [
        WHERE data >= '2026-10-01' AND data < '2026-12-01'`,
     ],
   },
-  {
-    // Pedaggi: da ora l'importo si salva IVA esclusa (con l'aliquota) e si mostra IVA inclusa.
-    // Quelli scritti a mano nella prima versione erano IVA inclusa: si riportano senza IVA,
-    // così l'importo mostrato resta identico.
-    nome: "2026-11-pedaggi-importo-iva-esclusa",
-    istruzioni: [
-      `UPDATE tolls
-       SET importo = printf('%.4f', CAST(importo AS REAL) / 1.22), iva = '22'
-       WHERE iva IS NULL`,
-    ],
-  },
 ];
+
+// Pedaggi: per poco (versione del 6 novembre) l'importo si è salvato IVA esclusa, con l'aliquota
+// nella colonna "iva". Gli importi del PDF Telepass sono già IVA inclusa, quindi l'importo si salva
+// di nuovo così com'è: chi aveva quella versione ritrova gli stessi importi che vedeva (IVA inclusa).
+function importoIvaInclusa(importo: unknown, iva: unknown): string | null {
+  const netto = Number(importo);
+  if (importo === null || importo === "" || !Number.isFinite(netto)) return null;
+  const n = iva === null || iva === undefined || iva === "" ? NaN : Number(iva);
+  const aliquota = Number.isFinite(n) ? n : 22;
+  return (Math.round(netto * (1 + aliquota / 100) * 100) / 100).toFixed(2);
+}
+
+async function pedaggiDiNuovoIvaInclusa() {
+  const info = await client.execute("PRAGMA table_info(tolls)");
+  if (!info.rows.some((r) => r.name === "iva")) return;
+  const righe = await client.execute("SELECT id, importo, iva FROM tolls WHERE iva IS NOT NULL");
+  const correzioni = righe.rows.flatMap((r) => {
+    const lordo = importoIvaInclusa(r.importo, r.iva);
+    return lordo === null ? [] : [{ sql: "UPDATE tolls SET importo = ? WHERE id = ?", args: [lordo, r.id] }];
+  });
+  // Tutto insieme: se qualcosa va storto non cambia nulla
+  await client.batch([...correzioni, "UPDATE tolls SET iva = NULL"], "write");
+  try {
+    await client.execute("ALTER TABLE tolls DROP COLUMN iva");
+  } catch {
+    // se non si riesce a toglierla resta vuota e non dà fastidio
+  }
+}
 
 async function preparaDatabase() {
   await client.executeMultiple(DDL_SCHEMA);
@@ -248,6 +265,8 @@ async function preparaDatabase() {
       await client.execute(`ALTER TABLE ${c.tabella} ADD COLUMN ${c.colonna} ${c.tipo}`);
     }
   }
+
+  await pedaggiDiNuovoIvaInclusa();
 
   for (const indice of INDICI) await client.execute(indice);
 

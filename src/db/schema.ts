@@ -144,8 +144,9 @@ export const tolls = sqliteTable("tolls", {
   stazioneUscita: text("stazione_uscita"), // STAZIONE USCITA
   classe: text("classe"), // CLASSE
   servizio: text("servizio"), // SRV (PED, SA3, ...)
-  importo: text("importo").notNull(), // IMPORTO, IVA esclusa
-  iva: text("iva"), // IVA: aliquota in %, es. "22"
+  importo: text("importo").notNull(), // IMPORTO, IVA inclusa come nel PDF (negativo per gli sconti)
+  // Nel file Telepass mancava la targa: il mezzo è quello che di solito usa il dispositivo (asterisco)
+  targaDalDispositivo: integer("targa_dal_dispositivo", { mode: "boolean" }).notNull().default(false),
   createdAt: text("created_at").$defaultFn(() => new Date().toISOString()),
 });
 

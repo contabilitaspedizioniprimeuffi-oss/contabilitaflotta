@@ -59,8 +59,8 @@ import {
   deleteVehicle,
 } from "@/lib/actions";
 import { INIZIO_CONTABILITA } from "@/lib/contabilita";
-import { computeConsumption, getVehicleBundle, nextServiceInfo } from "@/lib/data";
-import { importoConIva, totaleConIva } from "@/lib/pedaggi";
+import { computeConsumption, getVehicleBundle, listVehicles, nextServiceInfo } from "@/lib/data";
+import { importoPedaggio, totalePedaggi } from "@/lib/pedaggi";
 import {
   DAY_MS,
   currentMonthKey,
@@ -185,12 +185,20 @@ export default async function SchedaMezzo(props: { params: Promise<{ id: string 
   const spesa30 =
     refs.filter((r) => r.data >= cutoff).reduce((s, r) => s + Number(r.costo), 0) +
     mans.filter((m) => m.data >= cutoff).reduce((s, m) => s + Number(m.costo ?? 0), 0) +
-    pdg.filter((p) => p.dataUscita >= cutoff).reduce((s, p) => s + importoConIva(p.importo, p.iva), 0);
+    pdg.filter((p) => p.dataUscita >= cutoff).reduce((s, p) => s + importoPedaggio(p), 0);
 
   // Pedaggi: sempre IVA inclusa
   const meseCorrente = currentMonthKey();
-  const pedaggiMese = totaleConIva(pdg.filter((p) => p.dataUscita.startsWith(meseCorrente)));
-  const pedaggiTot = totaleConIva(pdg);
+  const pedaggiMese = totalePedaggi(pdg.filter((p) => p.dataUscita.startsWith(meseCorrente)));
+  const pedaggiTot = totalePedaggi(pdg);
+  // Per cambiare la targa di un pedaggio (anche verso un altro mezzo)
+  const tuttiIMezzi = (await listVehicles()).map((m) => ({
+    id: m.id,
+    targa: m.targa,
+    marca: m.marca,
+    modello: m.modello,
+    venduto: m.stato === "venduto",
+  }));
 
   const spesaManutTot = mans.reduce((s, m) => s + Number(m.costo ?? 0), 0);
 
@@ -566,7 +574,7 @@ export default async function SchedaMezzo(props: { params: Promise<{ id: string 
               <Empty icon={Route} title="Nessun pedaggio" sub="Registra i pedaggi con il pulsante «Pedaggio» qui sopra." />
             </div>
           ) : (
-            <TabellaPedaggi righe={pdg.map((p) => ({ p }))} mostraTarga={false} />
+            <TabellaPedaggi righe={pdg.map((p) => ({ p }))} mostraTarga={false} mezzi={tuttiIMezzi} />
           )}
         </SectionCard>
       ),

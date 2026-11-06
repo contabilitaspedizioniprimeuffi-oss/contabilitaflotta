@@ -6,7 +6,7 @@ import TabellaPedaggi from "@/components/tabella-pedaggi";
 import { Empty, PageHeader, SectionCard, StatCard } from "@/components/ui";
 import { listTollMonths, listTollsJoin, listVehicles } from "@/lib/data";
 import { currentMonthKey, fmtDate, fmtEur, fmtMese, fmtMeseTitolo, fmtNum, fmtTratta } from "@/lib/format";
-import { importoConIva, totaleConIva } from "@/lib/pedaggi";
+import { importoPedaggio, totalePedaggi } from "@/lib/pedaggi";
 
 export const dynamic = "force-dynamic";
 
@@ -45,7 +45,7 @@ export default async function PedaggiPage(props: {
 
   const periodo = mese ? fmtMese(mese) : "tutti i mesi";
   // Importi sempre IVA inclusa
-  const totale = totaleConIva(rows.map((x) => x.p));
+  const totale = totalePedaggi(rows.map((x) => x.p));
   const mezzoScelto = vid ? vs.find((v) => v.id === vid) : undefined;
 
   // Totale per targa nel periodo scelto
@@ -59,26 +59,34 @@ export default async function PedaggiPage(props: {
       totale: 0,
       passaggi: 0,
     };
-    t.totale += importoConIva(x.p.importo, x.p.iva);
+    t.totale += importoPedaggio(x.p);
     t.passaggi += 1;
     perMezzo.set(x.p.vehicleId, t);
   }
   const perTarga = [...perMezzo.values()].sort((a, b) => b.totale - a.totale);
   const piuCaro = rows.reduce<(typeof rows)[number] | null>(
-    (max, x) => (!max || importoConIva(x.p.importo, x.p.iva) > importoConIva(max.p.importo, max.p.iva) ? x : max),
+    (max, x) => (!max || importoPedaggio(x.p) > importoPedaggio(max.p) ? x : max),
     null
   );
 
   const mezziSelezionabili = vs
     .filter((v) => v.stato !== "venduto")
     .map((v) => ({ id: v.id, targa: v.targa, marca: v.marca, modello: v.modello }));
+  // Per cambiare la targa di un pedaggio già registrato (anche di un mezzo venduto)
+  const tuttiIMezzi = vs.map((v) => ({
+    id: v.id,
+    targa: v.targa,
+    marca: v.marca,
+    modello: v.modello,
+    venduto: v.stato === "venduto",
+  }));
 
   return (
     <div className="space-y-6">
       <PageHeader
         eyebrow="Autostrade"
         title="Pedaggi"
-        sub="Passaggi ai caselli di ogni mezzo, con gli stessi campi del dettaglio Telepass. Importi mostrati IVA inclusa."
+        sub="Passaggi ai caselli di ogni mezzo, con gli stessi campi del dettaglio Telepass. Importi IVA inclusa, come nel PDF."
         actions={
           vs.length > 0 ? (
             <AddTollDialog vehicles={mezziSelezionabili} mezzoProposto={vid ?? undefined} principale />
@@ -104,7 +112,7 @@ export default async function PedaggiPage(props: {
           <StatCard
             icon={TrendingUp}
             label="Pedaggio più caro"
-            value={piuCaro ? fmtEur(importoConIva(piuCaro.p.importo, piuCaro.p.iva), 2) : "—"}
+            value={piuCaro ? fmtEur(importoPedaggio(piuCaro.p), 2) : "—"}
             sub={
               piuCaro
                 ? `${fmtTratta(piuCaro.p.stazioneEntrata, piuCaro.p.stazioneUscita)} · ${fmtDate(piuCaro.p.dataUscita)}`
@@ -190,6 +198,7 @@ export default async function PedaggiPage(props: {
           <TabellaPedaggi
             righe={rows.map((x) => ({ p: x.p, targa: x.targa }))}
             mostraTarga
+            mezzi={tuttiIMezzi}
             totale={totale}
             etichettaTotale={`Totale IVA inclusa · ${periodo}${mezzoScelto ? ` · ${mezzoScelto.targa}` : ""}`}
           />
