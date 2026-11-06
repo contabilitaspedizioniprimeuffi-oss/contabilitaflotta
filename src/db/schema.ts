@@ -127,6 +127,21 @@ export const fines = sqliteTable("fines", {
 });
 
 // ---------------------------------------------------------------------------
+// IMPORTAZIONI dei pedaggi da file JSON (una riga per ogni file caricato)
+// ---------------------------------------------------------------------------
+export const importazioniPedaggi = sqliteTable("importazioni_pedaggi", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  fatturaNumero: text("fattura_numero"),
+  fatturaData: text("fattura_data"),
+  periodoDal: text("periodo_dal"),
+  periodoAl: text("periodo_al"),
+  fileNome: text("file_nome"),
+  passaggi: integer("passaggi").notNull().default(0), // pedaggi importati
+  totale: text("totale"), // somma dei pedaggi importati (IVA inclusa)
+  createdAt: text("created_at").$defaultFn(() => new Date().toISOString()),
+});
+
+// ---------------------------------------------------------------------------
 // PEDAGGI (autostrade): stessi campi del «Dettaglio Elenco Viaggi Pedaggio» Telepass
 // ---------------------------------------------------------------------------
 export const tolls = sqliteTable("tolls", {
@@ -147,6 +162,8 @@ export const tolls = sqliteTable("tolls", {
   importo: text("importo").notNull(), // IMPORTO, IVA inclusa come nel PDF (negativo per gli sconti)
   // Nel file Telepass mancava la targa: il mezzo è quello che di solito usa il dispositivo (asterisco)
   targaDalDispositivo: integer("targa_dal_dispositivo", { mode: "boolean" }).notNull().default(false),
+  // File JSON da cui arriva il pedaggio (vuoto = scritto a mano)
+  importazioneId: integer("importazione_id").references(() => importazioniPedaggi.id, { onDelete: "set null" }),
   createdAt: text("created_at").$defaultFn(() => new Date().toISOString()),
 });
 
@@ -211,3 +228,4 @@ export type Deadline = typeof deadlines.$inferSelect;
 export type Fine = typeof fines.$inferSelect;
 export type DriverLog = typeof driverLogs.$inferSelect;
 export type Toll = typeof tolls.$inferSelect;
+export type ImportazionePedaggi = typeof importazioniPedaggi.$inferSelect;

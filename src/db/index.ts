@@ -97,6 +97,18 @@ CREATE TABLE IF NOT EXISTS fines (
   created_at TEXT DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS importazioni_pedaggi (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  fattura_numero TEXT,
+  fattura_data TEXT,
+  periodo_dal TEXT,
+  periodo_al TEXT,
+  file_nome TEXT,
+  passaggi INTEGER NOT NULL DEFAULT 0,
+  totale TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS tolls (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   vehicle_id INTEGER NOT NULL REFERENCES vehicles(id) ON DELETE CASCADE,
@@ -112,6 +124,7 @@ CREATE TABLE IF NOT EXISTS tolls (
   servizio TEXT,
   importo TEXT NOT NULL,
   targa_dal_dispositivo INTEGER NOT NULL DEFAULT 0,
+  importazione_id INTEGER REFERENCES importazioni_pedaggi(id) ON DELETE SET NULL,
   created_at TEXT DEFAULT (datetime('now'))
 );
 `;
@@ -128,6 +141,7 @@ const COLONNE_RINOMINATE: { tabella: string; da: string; a: string }[] = [
 const INDICI = [
   "CREATE INDEX IF NOT EXISTS idx_tolls_data ON tolls(data_uscita)",
   "CREATE INDEX IF NOT EXISTS idx_tolls_vehicle ON tolls(vehicle_id, data_uscita)",
+  "CREATE INDEX IF NOT EXISTS idx_tolls_dispositivo ON tolls(dispositivo, data_uscita)",
 ];
 
 // Colonne aggiunte dopo la prima versione: nei database già esistenti (quello del PC
@@ -143,6 +157,7 @@ const COLONNE_AGGIUNTE: { tabella: string; colonna: string; tipo: string }[] = [
   { tabella: "tolls", colonna: "classe", tipo: "TEXT" },
   { tabella: "tolls", colonna: "servizio", tipo: "TEXT" },
   { tabella: "tolls", colonna: "targa_dal_dispositivo", tipo: "INTEGER NOT NULL DEFAULT 0" },
+  { tabella: "tolls", colonna: "importazione_id", tipo: "INTEGER REFERENCES importazioni_pedaggi(id) ON DELETE SET NULL" },
 ];
 
 // Sistemazioni dei dati da fare una volta sola (ricordate nella tabella "migrazioni").

@@ -1,5 +1,6 @@
 import { Banknote, Filter, Route, TrendingUp } from "lucide-react";
 import Link from "next/link";
+import CaricaJsonPedaggi from "@/components/carica-json-pedaggi";
 import { AddTollDialog } from "@/components/dialogs";
 import Plate from "@/components/plate";
 import TabellaPedaggi from "@/components/tabella-pedaggi";
@@ -88,9 +89,12 @@ export default async function PedaggiPage(props: {
         title="Pedaggi"
         sub="Passaggi ai caselli di ogni mezzo, con gli stessi campi del dettaglio Telepass. Importi IVA inclusa, come nel PDF."
         actions={
-          vs.length > 0 ? (
-            <AddTollDialog vehicles={mezziSelezionabili} mezzoProposto={vid ?? undefined} principale />
-          ) : null
+          <>
+            <CaricaJsonPedaggi />
+            {vs.length > 0 ? (
+              <AddTollDialog vehicles={mezziSelezionabili} mezzoProposto={vid ?? undefined} principale />
+            ) : null}
+          </>
         }
       />
 

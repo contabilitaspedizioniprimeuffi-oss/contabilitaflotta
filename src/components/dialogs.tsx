@@ -53,7 +53,7 @@ import { currentMonthKey, fmtNum } from "@/lib/format";
 // Guscio modale
 // ---------------------------------------------------------------------------
 
-function ModalShell({
+export function ModalShell({
   title,
   icon: Icon,
   onClose,
@@ -64,7 +64,7 @@ function ModalShell({
   icon: any;
   onClose: () => void;
   children: ReactNode;
-  wide?: boolean;
+  wide?: boolean | "xl";
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -85,7 +85,7 @@ function ModalShell({
       />
       <div
         className={`relative w-full animate-rise overflow-hidden rounded-[24px] border border-line bg-card shadow-2xl ${
-          wide ? "max-w-2xl" : "max-w-lg"
+          wide === "xl" ? "max-w-4xl" : wide ? "max-w-2xl" : "max-w-lg"
         }`}
       >
         <header className="flex items-center gap-3 border-b border-line px-6 py-4">
