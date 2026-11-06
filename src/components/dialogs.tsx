@@ -45,7 +45,8 @@ import {
   updateToll,
   type FormResult,
 } from "@/lib/actions";
-import { currentMonthKey, fmtNum } from "@/lib/format";
+import { currentMonthKey, fmtEur, fmtNum } from "@/lib/format";
+import { importoConIva, IVA_PEDAGGI_PREDEFINITA } from "@/lib/pedaggi";
 
 // ---------------------------------------------------------------------------
 // Guscio modale
@@ -688,12 +689,19 @@ function TollForm({
 
   const proposto = mezzoProposto && vehicles?.some((v) => v.id === mezzoProposto) ? String(mezzoProposto) : "";
 
+  // Importo IVA esclusa + aliquota: l'importo IVA inclusa si calcola mentre si scrive
+  const [importo, setImporto] = useState(initial ? String(Number(initial.importo)) : "");
+  const [iva, setIva] = useState(initial?.iva ?? String(IVA_PEDAGGI_PREDEFINITA));
+  const netto = Number(importo.replace(",", "."));
+  const lordo =
+    importo.trim() !== "" && Number.isFinite(netto) ? importoConIva(netto, iva.replace(",", ".")) : null;
+
   return (
     <form action={formAction}>
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-3 gap-4">
         {vehicles ? (
-          <div className="col-span-2">
-            <Field label="Mezzo *">
+          <div className="col-span-3">
+            <Field label="Targa *">
               <select className="input" name="vehicleId" required defaultValue={proposto}>
                 <option value="" disabled>
                   Seleziona mezzo…
@@ -708,33 +716,70 @@ function TollForm({
           </div>
         ) : null}
 
-        <Field label="Data *">
-          <input className="input" type="date" name="data" defaultValue={initial?.data ?? todayIso()} required />
+        <div className="col-span-2">
+          <Field label="Dispositivo (codice OBU/PAN)">
+            <input className="input font-mono uppercase" type="text" name="dispositivo" defaultValue={initial?.dispositivo ?? undefined} placeholder="es. 12AB34CD/6389160000000000000F" />
+          </Field>
+        </div>
+        <Field label="ID prenotazione">
+          <input className="input font-mono" type="text" name="idPrenotazione" defaultValue={initial?.idPrenotazione ?? undefined} />
         </Field>
-        <Field label="Importo (€) *">
+
+        <p className="col-span-3 -mb-2 border-t border-dashed border-line pt-3 text-xs font-extrabold uppercase tracking-[0.14em]">Entrata</p>
+        <Field label="Data entrata">
+          <input className="input" type="date" name="dataEntrata" defaultValue={initial?.dataEntrata ?? undefined} />
+        </Field>
+        <Field label="Ora entrata">
+          <input className="input font-mono" type="time" step={1} name="oraEntrata" defaultValue={initial?.oraEntrata ?? undefined} />
+        </Field>
+        <Field label="Stazione entrata">
+          <input className="input" type="text" name="stazioneEntrata" defaultValue={initial?.stazioneEntrata ?? undefined} placeholder="es. NAPOLI EST" />
+        </Field>
+
+        <p className="col-span-3 -mb-2 border-t border-dashed border-line pt-3 text-xs font-extrabold uppercase tracking-[0.14em]">Uscita</p>
+        <Field label="Data uscita *">
+          <input className="input" type="date" name="dataUscita" defaultValue={initial?.dataUscita ?? todayIso()} required />
+        </Field>
+        <Field label="Ora uscita">
+          <input className="input font-mono" type="time" step={1} name="oraUscita" defaultValue={initial?.oraUscita ?? undefined} />
+        </Field>
+        <Field label="Stazione uscita">
+          <input className="input" type="text" name="stazioneUscita" defaultValue={initial?.stazioneUscita ?? undefined} placeholder="es. CASERTA SUD" />
+        </Field>
+
+        <p className="col-span-3 -mb-2 border-t border-dashed border-line pt-3 text-xs font-extrabold uppercase tracking-[0.14em]">Classe e importo</p>
+        <Field label="Classe">
+          <input className="input font-mono uppercase" type="text" name="classe" defaultValue={initial?.classe ?? undefined} placeholder="es. B" />
+        </Field>
+        <Field label="SRV (servizio)">
+          <input className="input font-mono uppercase" type="text" name="servizio" defaultValue={initial ? (initial.servizio ?? undefined) : "PED"} placeholder="es. PED" />
+        </Field>
+        <Field label="IVA %">
+          <input className="input font-mono" type="number" name="iva" min={0} max={100} step="0.01" value={iva} onChange={(e) => setIva(e.target.value)} />
+        </Field>
+        <Field label="Importo IVA esclusa (€) *">
           <input
             className="input font-mono"
             type="number"
             name="importo"
-            min={0.01}
-            step="0.01"
-            defaultValue={initial?.importo ?? undefined}
-            placeholder="es. 4,60"
+            step="0.0001"
+            value={importo}
+            onChange={(e) => setImporto(e.target.value)}
+            placeholder="es. 1,3934"
             required
           />
         </Field>
-        <Field label="Casello di entrata">
-          <input className="input" type="text" name="entrata" defaultValue={initial?.entrata ?? undefined} placeholder="es. Napoli Nord" />
-        </Field>
-        <Field label="Casello di uscita">
-          <input className="input" type="text" name="uscita" defaultValue={initial?.uscita ?? undefined} placeholder="es. Caserta Sud" />
-        </Field>
         <div className="col-span-2">
-          <Field label="Note">
-            <input className="input" type="text" name="note" defaultValue={initial?.note ?? undefined} placeholder="es. consegne zona Salerno" />
+          <Field label="Importo IVA inclusa">
+            <div className="input flex items-center bg-paper! font-mono font-bold">
+              {lordo === null ? <span className="font-normal text-mute">si calcola da solo</span> : fmtEur(lordo, 2)}
+            </div>
           </Field>
         </div>
       </div>
+      <p className="mt-3 text-xs text-mute">
+        Nel programma i pedaggi si vedono e si sommano sempre con l&apos;IVA inclusa. Gli importi negativi (sconti, rimborsi) sono ammessi.
+      </p>
       <ErrorBox msg={state.error} />
       <SubmitRow pending={pending} onClose={onClose} cta={initial ? "Salva modifiche" : "Registra pedaggio"} />
     </form>
@@ -767,7 +812,7 @@ export function AddTollDialog({
         </button>
       )}
       {open ? (
-        <ModalShell title="Registra pedaggio" icon={Route} onClose={close}>
+        <ModalShell title="Registra pedaggio" icon={Route} onClose={close} wide>
           <TollForm vehicleId={vehicleId} vehicles={vehicles} mezzoProposto={mezzoProposto} onClose={close} />
         </ModalShell>
       ) : null}
@@ -789,7 +834,7 @@ export function EditTollButton({ initial }: { initial: Toll }) {
         <Pencil className="h-4 w-4" />
       </button>
       {open ? (
-        <ModalShell title="Modifica pedaggio" icon={Route} onClose={close}>
+        <ModalShell title="Modifica pedaggio" icon={Route} onClose={close} wide>
           <TollForm initial={initial} onClose={close} />
         </ModalShell>
       ) : null}

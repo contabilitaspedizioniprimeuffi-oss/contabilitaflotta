@@ -492,23 +492,53 @@ export async function deleteFine(id: number) {
 // PEDAGGI
 // ---------------------------------------------------------------------------
 
+// Stessi campi del dettaglio Telepass. L'importo è IVA esclusa (fino a 4 decimali, così
+// riportando l'IVA si ritrova l'importo esatto); può essere negativo (sconti, rimborsi).
+const DATA_ISO = /^\d{4}-\d{2}-\d{2}$/;
+
+/** "9:05" / "09:05:30" → "09:05:00" / "09:05:30" */
+function ora(fd: FormData, key: string): string | null {
+  const m = str(fd, key)?.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (!m || Number(m[1]) > 23) return null;
+  return `${m[1].padStart(2, "0")}:${m[2]}:${m[3] ?? "00"}`;
+}
+
+function maiuscolo(fd: FormData, key: string): string | null {
+  return str(fd, key)?.toUpperCase() ?? null;
+}
+
 function readTollForm(fd: FormData) {
-  const data = str(fd, "data");
+  const dataUscita = str(fd, "dataUscita");
   const importo = num(fd, "importo");
-  if (!data || importo === null) {
-    return { error: "Data e importo sono obbligatori." as const };
+  if (!dataUscita || !DATA_ISO.test(dataUscita) || importo === null) {
+    return { error: "Data di uscita e importo sono obbligatori." as const };
   }
-  if (importo <= 0) {
-    return { error: "L'importo deve essere maggiore di zero." as const };
+  if (importo === 0) {
+    return { error: "L'importo non può essere zero." as const };
+  }
+  const dataEntrata = str(fd, "dataEntrata");
+  if (dataEntrata && !DATA_ISO.test(dataEntrata)) {
+    return { error: "La data di entrata non è valida." as const };
+  }
+  const iva = num(fd, "iva") ?? 22;
+  if (iva < 0 || iva > 100) {
+    return { error: "L'IVA deve essere una percentuale tra 0 e 100." as const };
   }
 
   return {
     values: {
-      data,
-      entrata: str(fd, "entrata"),
-      uscita: str(fd, "uscita"),
-      importo: importo.toFixed(2),
-      note: str(fd, "note"),
+      dispositivo: maiuscolo(fd, "dispositivo"),
+      idPrenotazione: str(fd, "idPrenotazione"),
+      dataEntrata,
+      oraEntrata: ora(fd, "oraEntrata"),
+      stazioneEntrata: str(fd, "stazioneEntrata"),
+      dataUscita,
+      oraUscita: ora(fd, "oraUscita"),
+      stazioneUscita: str(fd, "stazioneUscita"),
+      classe: maiuscolo(fd, "classe"),
+      servizio: maiuscolo(fd, "servizio"),
+      importo: String(Number(importo.toFixed(4))),
+      iva: String(Number(iva.toFixed(2))),
     },
   };
 }

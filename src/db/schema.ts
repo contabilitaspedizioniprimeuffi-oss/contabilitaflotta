@@ -127,18 +127,25 @@ export const fines = sqliteTable("fines", {
 });
 
 // ---------------------------------------------------------------------------
-// PEDAGGI (autostrade)
+// PEDAGGI (autostrade): stessi campi del «Dettaglio Elenco Viaggi Pedaggio» Telepass
 // ---------------------------------------------------------------------------
 export const tolls = sqliteTable("tolls", {
   id: integer("id").primaryKey({ autoIncrement: true }),
-  vehicleId: integer("vehicle_id")
+  vehicleId: integer("vehicle_id") // TARGA
     .notNull()
     .references(() => vehicles.id, { onDelete: "cascade" }),
-  data: text("data").notNull(),
-  entrata: text("entrata"), // casello di entrata
-  uscita: text("uscita"), // casello di uscita
-  importo: text("importo").notNull(),
-  note: text("note"),
+  dispositivo: text("dispositivo"), // DISPOSITIVO CODICE OBU/PAN
+  idPrenotazione: text("id_prenotazione"), // ID PRENOTAZIONE
+  dataEntrata: text("data_entrata"), // DATA ENTR. (AAAA-MM-GG)
+  oraEntrata: text("ora_entrata"), // ORA ENTR (HH:MM:SS)
+  stazioneEntrata: text("stazione_entrata"), // STAZIONE ENTRATA
+  dataUscita: text("data_uscita").notNull(), // DATA USC.: è la data del pedaggio
+  oraUscita: text("ora_uscita"), // ORA USC.
+  stazioneUscita: text("stazione_uscita"), // STAZIONE USCITA
+  classe: text("classe"), // CLASSE
+  servizio: text("servizio"), // SRV (PED, SA3, ...)
+  importo: text("importo").notNull(), // IMPORTO, IVA esclusa
+  iva: text("iva"), // IVA: aliquota in %, es. "22"
   createdAt: text("created_at").$defaultFn(() => new Date().toISOString()),
 });
 

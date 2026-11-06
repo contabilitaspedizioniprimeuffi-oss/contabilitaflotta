@@ -80,7 +80,7 @@ export async function getVehicleBundle(id: number) {
       .select()
       .from(tolls)
       .where(eq(tolls.vehicleId, id))
-      .orderBy(desc(tolls.data), desc(tolls.id)),
+      .orderBy(desc(tolls.dataUscita), desc(tolls.oraUscita), desc(tolls.id)),
   ]);
 
   return { vehicle, maintenances: mans, refuels: refs, deadlines: dls, fines: fns, driverLogs: logs, tolls: pdg };
@@ -179,24 +179,24 @@ export async function listTollsJoin(vehicleId: number | null, mese: string | nul
     })
     .from(tolls)
     .innerJoin(vehicles, eq(tolls.vehicleId, vehicles.id))
-    .orderBy(desc(tolls.data), desc(tolls.id));
+    .orderBy(desc(tolls.dataUscita), desc(tolls.oraUscita), desc(tolls.id));
 
   const conds = [];
   if (vehicleId) conds.push(eq(tolls.vehicleId, vehicleId));
-  if (mese) conds.push(like(tolls.data, `${mese}-%`));
+  if (mese) conds.push(like(tolls.dataUscita, `${mese}-%`));
   if (conds.length) return base.where(and(...conds));
   return base;
 }
 
-/** Mesi in cui sono registrati pedaggi ("2026-11"), dal più recente */
+/** Mesi in cui sono registrati pedaggi ("2026-11", in base alla data di uscita), dal più recente */
 export async function listTollMonths(): Promise<string[]> {
-  const mese = sql<string>`substr(${tolls.data}, 1, 7)`;
+  const mese = sql<string>`substr(${tolls.dataUscita}, 1, 7)`;
   const rows = await db.selectDistinct({ mese }).from(tolls).orderBy(desc(mese));
   return rows.map((r) => r.mese).filter((m) => typeof m === "string" && /^\d{4}-\d{2}$/.test(m));
 }
 
 export async function listTollsSince(isoDate: string): Promise<Toll[]> {
-  return db.select().from(tolls).where(gte(tolls.data, isoDate));
+  return db.select().from(tolls).where(gte(tolls.dataUscita, isoDate));
 }
 
 // ---------------------------------------------------------------------------

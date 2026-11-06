@@ -1,10 +1,12 @@
-import { Banknote, ChevronRight, Filter, Route, TrendingUp } from "lucide-react";
+import { Banknote, Filter, Route, TrendingUp } from "lucide-react";
 import Link from "next/link";
-import { AddTollDialog, DeleteTollButton, EditTollButton } from "@/components/dialogs";
+import { AddTollDialog } from "@/components/dialogs";
 import Plate from "@/components/plate";
+import TabellaPedaggi from "@/components/tabella-pedaggi";
 import { Empty, PageHeader, SectionCard, StatCard } from "@/components/ui";
 import { listTollMonths, listTollsJoin, listVehicles } from "@/lib/data";
 import { currentMonthKey, fmtDate, fmtEur, fmtMese, fmtMeseTitolo, fmtNum, fmtTratta } from "@/lib/format";
+import { importoConIva, totaleConIva } from "@/lib/pedaggi";
 
 export const dynamic = "force-dynamic";
 
@@ -42,7 +44,8 @@ export default async function PedaggiPage(props: {
     .reverse();
 
   const periodo = mese ? fmtMese(mese) : "tutti i mesi";
-  const totale = rows.reduce((s, x) => s + Number(x.p.importo), 0);
+  // Importi sempre IVA inclusa
+  const totale = totaleConIva(rows.map((x) => x.p));
   const mezzoScelto = vid ? vs.find((v) => v.id === vid) : undefined;
 
   // Totale per targa nel periodo scelto
@@ -56,13 +59,13 @@ export default async function PedaggiPage(props: {
       totale: 0,
       passaggi: 0,
     };
-    t.totale += Number(x.p.importo);
+    t.totale += importoConIva(x.p.importo, x.p.iva);
     t.passaggi += 1;
     perMezzo.set(x.p.vehicleId, t);
   }
   const perTarga = [...perMezzo.values()].sort((a, b) => b.totale - a.totale);
   const piuCaro = rows.reduce<(typeof rows)[number] | null>(
-    (max, x) => (!max || Number(x.p.importo) > Number(max.p.importo) ? x : max),
+    (max, x) => (!max || importoConIva(x.p.importo, x.p.iva) > importoConIva(max.p.importo, max.p.iva) ? x : max),
     null
   );
 
@@ -75,7 +78,7 @@ export default async function PedaggiPage(props: {
       <PageHeader
         eyebrow="Autostrade"
         title="Pedaggi"
-        sub="Caselli e importi dei pedaggi di ogni mezzo, con il totale del mese diviso per targa."
+        sub="Passaggi ai caselli di ogni mezzo, con gli stessi campi del dettaglio Telepass. Importi mostrati IVA inclusa."
         actions={
           vs.length > 0 ? (
             <AddTollDialog vehicles={mezziSelezionabili} mezzoProposto={vid ?? undefined} principale />
@@ -86,7 +89,7 @@ export default async function PedaggiPage(props: {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatCard
           icon={Banknote}
-          label={`Spesa · ${periodo}`}
+          label={`Spesa IVA incl. · ${periodo}`}
           value={fmtEur(totale, 2)}
           sub={mezzoScelto ? `solo ${mezzoScelto.targa}` : "tutta la flotta"}
         />
@@ -101,8 +104,12 @@ export default async function PedaggiPage(props: {
           <StatCard
             icon={TrendingUp}
             label="Pedaggio più caro"
-            value={piuCaro ? fmtEur(piuCaro.p.importo, 2) : "—"}
-            sub={piuCaro ? `${fmtTratta(piuCaro.p.entrata, piuCaro.p.uscita)} · ${fmtDate(piuCaro.p.data)}` : "—"}
+            value={piuCaro ? fmtEur(importoConIva(piuCaro.p.importo, piuCaro.p.iva), 2) : "—"}
+            sub={
+              piuCaro
+                ? `${fmtTratta(piuCaro.p.stazioneEntrata, piuCaro.p.stazioneUscita)} · ${fmtDate(piuCaro.p.dataUscita)}`
+                : "—"
+            }
           />
         ) : (
           <StatCard
@@ -161,7 +168,7 @@ export default async function PedaggiPage(props: {
                     {t.marca} {t.modello} · {t.passaggi} {t.passaggi === 1 ? "passaggio" : "passaggi"}
                   </span>
                 </span>
-                <span className="shrink-0 font-mono text-sm font-bold">{fmtEur(t.totale, 2)}</span>
+                <span className="shrink-0 font-mono text-sm font-bold">{fmtEur(Math.round(t.totale * 100) / 100, 2)}</span>
               </Link>
             ))}
           </div>
@@ -180,61 +187,12 @@ export default async function PedaggiPage(props: {
         />
       ) : (
         <div className="card overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px]">
-              <thead>
-                <tr className="border-b border-line">
-                  <th className="th">Data</th>
-                  <th className="th">Mezzo</th>
-                  <th className="th">Tratta</th>
-                  <th className="th">Note</th>
-                  <th className="th text-right">Importo</th>
-                  <th className="th" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-line">
-                {rows.map((x) => (
-                  <tr key={x.p.id} className="transition-colors hover:bg-paper/60">
-                    <td className="td whitespace-nowrap font-semibold">{fmtDate(x.p.data)}</td>
-                    <td className="td">
-                      <Link href={`/mezzi/${x.p.vehicleId}`} className="flex items-center gap-2.5 font-bold hover:underline">
-                        <Plate targa={x.targa} size="sm" />
-                        <span className="hidden 2xl:inline">
-                          {x.marca} {x.modello}
-                        </span>
-                      </Link>
-                    </td>
-                    <td className="td font-semibold">{fmtTratta(x.p.entrata, x.p.uscita)}</td>
-                    <td className="td max-w-[260px] truncate text-xs text-mute">{x.p.note ?? "—"}</td>
-                    <td className="td text-right font-mono text-sm font-bold">{fmtEur(x.p.importo, 2)}</td>
-                    <td className="td">
-                      <div className="flex items-center justify-end gap-1">
-                        <EditTollButton initial={x.p} />
-                        <DeleteTollButton id={x.p.id} />
-                        <Link
-                          href={`/mezzi/${x.p.vehicleId}`}
-                          className="hidden h-8 w-8 items-center justify-center rounded-full text-mute transition-colors hover:bg-ink-950/5 hover:text-ink-950 md:flex"
-                          aria-label="Apri scheda mezzo"
-                        >
-                          <ChevronRight className="h-4 w-4" />
-                        </Link>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr className="border-t border-line bg-paper/60">
-                  <td className="td text-xs font-bold uppercase tracking-wide" colSpan={4}>
-                    Totale · {periodo}
-                    {mezzoScelto ? ` · ${mezzoScelto.targa}` : ""}
-                  </td>
-                  <td className="td text-right font-mono text-sm font-black">{fmtEur(totale, 2)}</td>
-                  <td className="td" />
-                </tr>
-              </tfoot>
-            </table>
-          </div>
+          <TabellaPedaggi
+            righe={rows.map((x) => ({ p: x.p, targa: x.targa }))}
+            mostraTarga
+            totale={totale}
+            etichettaTotale={`Totale IVA inclusa · ${periodo}${mezzoScelto ? ` · ${mezzoScelto.targa}` : ""}`}
+          />
         </div>
       )}
     </div>

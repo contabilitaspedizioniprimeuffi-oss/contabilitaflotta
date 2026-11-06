@@ -100,21 +100,49 @@ CREATE TABLE IF NOT EXISTS fines (
 CREATE TABLE IF NOT EXISTS tolls (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   vehicle_id INTEGER NOT NULL REFERENCES vehicles(id) ON DELETE CASCADE,
-  data TEXT NOT NULL,
-  entrata TEXT,
-  uscita TEXT,
+  dispositivo TEXT,
+  id_prenotazione TEXT,
+  data_entrata TEXT,
+  ora_entrata TEXT,
+  stazione_entrata TEXT,
+  data_uscita TEXT NOT NULL,
+  ora_uscita TEXT,
+  stazione_uscita TEXT,
+  classe TEXT,
+  servizio TEXT,
   importo TEXT NOT NULL,
-  note TEXT,
+  iva TEXT,
   created_at TEXT DEFAULT (datetime('now'))
 );
-CREATE INDEX IF NOT EXISTS idx_tolls_data ON tolls(data);
-CREATE INDEX IF NOT EXISTS idx_tolls_vehicle ON tolls(vehicle_id, data);
 `;
+
+// Colonne rinominate dopo la prima versione (prima di aggiungere quelle nuove).
+// Pedaggi: la prima versione aveva data / entrata / uscita.
+const COLONNE_RINOMINATE: { tabella: string; da: string; a: string }[] = [
+  { tabella: "tolls", da: "data", a: "data_uscita" },
+  { tabella: "tolls", da: "entrata", a: "stazione_entrata" },
+  { tabella: "tolls", da: "uscita", a: "stazione_uscita" },
+];
+
+// Indici creati dopo aver sistemato le colonne
+const INDICI = [
+  "CREATE INDEX IF NOT EXISTS idx_tolls_data ON tolls(data_uscita)",
+  "CREATE INDEX IF NOT EXISTS idx_tolls_vehicle ON tolls(vehicle_id, data_uscita)",
+];
 
 // Colonne aggiunte dopo la prima versione: nei database già esistenti (quello del PC
 // con i dati veri) vengono aggiunte all'avvio, senza toccare i dati presenti.
 const COLONNE_AGGIUNTE: { tabella: string; colonna: string; tipo: string }[] = [
   { tabella: "vehicles", colonna: "km_massimi_contratto", tipo: "INTEGER" },
+  // Pedaggi con gli stessi campi del dettaglio Telepass
+  { tabella: "tolls", colonna: "dispositivo", tipo: "TEXT" },
+  { tabella: "tolls", colonna: "id_prenotazione", tipo: "TEXT" },
+  { tabella: "tolls", colonna: "data_entrata", tipo: "TEXT" },
+  { tabella: "tolls", colonna: "ora_entrata", tipo: "TEXT" },
+  { tabella: "tolls", colonna: "ora_uscita", tipo: "TEXT" },
+  { tabella: "tolls", colonna: "classe", tipo: "TEXT" },
+  { tabella: "tolls", colonna: "servizio", tipo: "TEXT" },
+  { tabella: "tolls", colonna: "iva", tipo: "TEXT" },
 ];
 
 // Sistemazioni dei dati da fare una volta sola (ricordate nella tabella "migrazioni").
@@ -190,10 +218,29 @@ const SISTEMAZIONI: { nome: string; istruzioni: string[] }[] = [
        WHERE data >= '2026-10-01' AND data < '2026-12-01'`,
     ],
   },
+  {
+    // Pedaggi: da ora l'importo si salva IVA esclusa (con l'aliquota) e si mostra IVA inclusa.
+    // Quelli scritti a mano nella prima versione erano IVA inclusa: si riportano senza IVA,
+    // così l'importo mostrato resta identico.
+    nome: "2026-11-pedaggi-importo-iva-esclusa",
+    istruzioni: [
+      `UPDATE tolls
+       SET importo = printf('%.4f', CAST(importo AS REAL) / 1.22), iva = '22'
+       WHERE iva IS NULL`,
+    ],
+  },
 ];
 
 async function preparaDatabase() {
   await client.executeMultiple(DDL_SCHEMA);
+
+  for (const r of COLONNE_RINOMINATE) {
+    const info = await client.execute(`PRAGMA table_info(${r.tabella})`);
+    const nomi = info.rows.map((x) => x.name);
+    if (nomi.includes(r.da) && !nomi.includes(r.a)) {
+      await client.execute(`ALTER TABLE ${r.tabella} RENAME COLUMN ${r.da} TO ${r.a}`);
+    }
+  }
 
   for (const c of COLONNE_AGGIUNTE) {
     const info = await client.execute(`PRAGMA table_info(${c.tabella})`);
@@ -201,6 +248,8 @@ async function preparaDatabase() {
       await client.execute(`ALTER TABLE ${c.tabella} ADD COLUMN ${c.colonna} ${c.tipo}`);
     }
   }
+
+  for (const indice of INDICI) await client.execute(indice);
 
   await client.execute(
     "CREATE TABLE IF NOT EXISTS migrazioni (nome TEXT PRIMARY KEY, eseguita_il TEXT DEFAULT (datetime('now')))"
