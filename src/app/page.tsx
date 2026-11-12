@@ -19,6 +19,7 @@ import Link from "next/link";
 import { MonthlyBars, HBar } from "@/components/charts";
 import Plate from "@/components/plate";
 import SyncButton from "@/components/sync-button";
+import SyncAutistiButton from "@/components/sync-autisti-button";
 import { DueChip, PageHeader, Pill, SectionCard, STATO_TONE, StatCard } from "@/components/ui";
 import {
   computeConsumption,
@@ -166,6 +167,8 @@ export default async function Dashboard() {
 
       {/* Sincronizzazione Google Fogli */}
       <SyncButton variant="banner" />
+      {/* Registro autisti (secondo Foglio Google): diario conducenti, manutenzioni, stato dei mezzi */}
+      <SyncAutistiButton variant="banner" className="px-2" />
 
       {/* KPI */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">

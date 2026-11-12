@@ -29,7 +29,7 @@ Il codice del programma è su GitHub. Le modifiche pubblicate lì si installano 
 
 Funziona anche se il programma è stato aperto con `avvia.bat`: in quel caso si apre una finestra con l'avanzamento (`strumenti/aggiorna-e-riapri.ps1`) e alla fine il programma si riapre da «Banca Dati Automezzi.exe».
 
-- **I dati non vengono mai toccati.** Il database (`local_database.db`), `sheets_dump.txt`, `.env.local`, i backup e i registri sono esclusi da git (`.gitignore`): l'aggiornamento non li modifica e non li cancella.
+- **I dati non vengono mai toccati.** Il database (`local_database.db`), `sheets_dump.txt`, `sheets_dump_autisti.txt`, `.env.local`, i backup e i registri sono esclusi da git (`.gitignore`): l'aggiornamento non li modifica e non li cancella.
 - **Backup automatico.** Prima di ogni aggiornamento viene salvata una copia del database nella cartella `backup` (si tengono le ultime 20).
 - **Ritorno automatico.** Se una nuova versione non si installa o non si compila, il programma torna da solo alla versione precedente.
 - **Prima sincronizzazione** (cartella copiata a mano o non ancora collegata): prima viene salvata una copia completa della cartella in `backup\prima-del-collegamento-<data>`.
@@ -48,6 +48,12 @@ La logica dell'aggiornamento è in `strumenti/aggiorna.ps1`, il pulsante in `src
 - L'indirizzo dello script si salva nel file **`.env.local`** del PC (`GOOGLE_SHEET_URL=...`): funziona come una password, non va mai su GitHub e gli aggiornamenti non lo toccano.
 - Ogni sincronizzazione riuscita salva una copia dei dati in **`sheets_dump.txt`**: se manca internet, il programma usa quella copia e lo segnala. Il file contiene dati reali e non viene mai pubblicato su GitHub.
 - L'ID del Foglio Google (`GOOGLE_SHEET_ID=...` nel file **`.env`**) serve solo per il link «Apri il Foglio».
+
+### Registro autisti (secondo Foglio Google)
+- Il pulsante **Registro autisti** (sidebar e Panoramica) legge il Foglio «registro presenze autisti» tramite una **seconda antenna** (codice in `strumenti/foglio-google-autisti.gs`, stessi passi dell'altra). Al primo clic chiede l'indirizzo dell'app web e lo salva in `.env.local` (`GOOGLE_SHEET_URL_AUTISTI=...`, mai su GitHub).
+- Legge solo la scheda **`USCITA_AUTISTI`**, che il registro rigenera da solo (una riga per presenza o cambio di stato: `TIPO · DATA · TARGA · AUTISTA_1 · AUTISTA_2 · STATO · CAUSALE · TARGA_SOSTITUTIVA · NOTE · ORIGINE`), e aggiorna: **diario conducenti** (una riga per autista e giorno), **manutenzioni** (dal cambio di stato MANUTENZIONE con la causale: freni, gomme, tagliando, riparazione, altro; periodo nel dettaglio, senza costo), **stato del mezzo** (attivo, in manutenzione, fermo, venduto) e il segno **sostitutivo** sulle targhe usate al posto di un furgone fermo.
+- Le righe scritte dal registro portano il prefisso `[Registro autisti]` e vengono sostituite a ogni sincronizzazione; quelle scritte a mano nel programma non si toccano. Un furgone presente nel registro ma non nel programma viene creato con un'anagrafica minima da completare; le targhe della pagina NOLEGGI sconosciute al programma si saltano.
+- Copia locale in `sheets_dump_autisti.txt` (usata se manca internet; contiene nomi di persone, mai su GitHub). Il parser è in `src/lib/registro-autisti.ts`, provato con `npm test` su dati finti.
 
 ### Dati demo
 `popola-dati.bat` (oppure `npm run seed`) **cancella tutti i dati** e inserisce 10 veicoli di esempio.

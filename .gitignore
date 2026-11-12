@@ -19,6 +19,8 @@ local_db/
 
 # Copia locale del Foglio Google (contiene dati reali)
 sheets_dump.txt
+# Copia locale del Foglio «registro autisti» (contiene nomi di persone)
+sheets_dump_autisti.txt
 
 # Backup e registri creati dagli script di aggiornamento
 backup/

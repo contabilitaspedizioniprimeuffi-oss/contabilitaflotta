@@ -5,7 +5,7 @@
   Scarica da GitHub l'ultima versione del programma e la prepara all'uso.
 
   I DATI NON VENGONO MAI TOCCATI
-  - local_database.db, sheets_dump.txt, .env.local, backup\ ... sono esclusi
+  - local_database.db, sheets_dump.txt, sheets_dump_autisti.txt, .env.local, backup\ ... sono esclusi
     da git (.gitignore): l'aggiornamento non li modifica e non li cancella.
   - Prima di ogni aggiornamento viene comunque salvata una copia del database
     nella cartella "backup" (si tengono le ultime 20 copie).
@@ -285,7 +285,7 @@ function Backup-Dati {
     $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
     $copiati = 0
     $file = @('local_database.db', 'local_database.db-wal', 'local_database.db-shm',
-              'local_database.db-journal', 'sheets_dump.txt', '.env.local', '.env')
+              'local_database.db-journal', 'sheets_dump.txt', 'sheets_dump_autisti.txt', '.env.local', '.env')
     foreach ($nome in $file) {
         $src = Join-Path $Cartella $nome
         if (Test-Path -LiteralPath $src -PathType Leaf) {
@@ -412,7 +412,7 @@ function Applica-Aggiornamento {
         $eliminati = Git-Out @('diff', '--name-only', '--diff-filter=D', $vecchio, $nuovo)
         if ($eliminati) {
             foreach ($f in ($eliminati -split "`r?`n")) {
-                if ($f -match '(^|/)(sheets_dump\.txt|[^/]*\.db(-[a-z]+)?|\.env[^/]*|[^/]*\.(xlsx?|csv|sqlite3?))$') {
+                if ($f -match '(^|/)(sheets_dump\.txt|sheets_dump_autisti\.txt|[^/]*\.db(-[a-z]+)?|\.env[^/]*|[^/]*\.(xlsx?|csv|sqlite3?))$') {
                     $src = Join-Path $Cartella $f
                     if (Test-Path -LiteralPath $src -PathType Leaf) {
                         $dst = Join-Path $tmp $f

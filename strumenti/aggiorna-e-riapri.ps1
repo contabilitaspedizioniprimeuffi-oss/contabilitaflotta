@@ -9,7 +9,7 @@
      automatico alla versione precedente se qualcosa va storto
   3) riapre il programma da "Banca Dati Automezzi.exe" (se non parte: avvia.bat)
 
-  I dati (local_database.db, sheets_dump.txt, .env.local) non vengono toccati.
+  I dati (local_database.db, sheets_dump.txt, sheets_dump_autisti.txt, .env.local) non vengono toccati.
 #>
 param(
     [int]$PidServer = 0,
