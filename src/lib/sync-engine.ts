@@ -220,7 +220,8 @@ export async function syncFromSheetData(rawText?: string): Promise<SyncResult> {
           dataFineNoleggio: meta.scadenza ?? existing[0].dataFineNoleggio,
           dataInizioNoleggio:
             tipoAcquisizione === "noleggio" && meta.inizio ? meta.inizio : existing[0].dataInizioNoleggio,
-          stato: "attivo",
+          // lo stato (attivo, in manutenzione, fermo, venduto) non si tocca: lo decide chi usa il
+          // programma o il registro autisti, e la sincronizzazione del gasolio non deve rimetterlo «attivo»
           categoria: "furgone",
           carburante: "diesel",
           note: meta.noteMezzo || existing[0].note,

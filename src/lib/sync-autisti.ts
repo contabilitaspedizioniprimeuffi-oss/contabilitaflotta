@@ -10,6 +10,13 @@ import {
 } from "@/lib/foglio-autisti";
 import { MARCA_REGISTRO, leggiUscitaAutisti, pianoImportazione } from "@/lib/registro-autisti";
 import { and, eq, inArray, like } from "drizzle-orm";
+import type { BatchItem } from "drizzle-orm/batch";
+
+type Manutenzione = typeof maintenances.$inferSelect;
+
+/** Una manutenzione del registro che qualcuno ha completato nel programma (costo, officina, km, scadenze) */
+const completataAMano = (m: Manutenzione) => !!(m.costo || m.officina || m.km || m.prossimoKm || m.prossimaData);
+const RE_PERIODO = /^dal \d{4}-\d{2}-\d{2}(?: al \d{4}-\d{2}-\d{2}| \(in corso\))/;
 
 export interface SyncAutistiResult {
   success: boolean;
@@ -117,31 +124,56 @@ export async function syncRegistroAutisti(rawText?: string): Promise<SyncAutisti
     }
     mezzi++;
 
-    // Diario conducenti: via le righe del registro, poi quelle nuove
-    await db.delete(driverLogs).where(and(eq(driverLogs.vehicleId, vehicleId), like(driverLogs.note, `${MARCA_REGISTRO}%`)));
-    for (const v of p.diario) {
-      await db.insert(driverLogs).values({ vehicleId, data: v.data, conducente: v.conducente, note: v.note });
+    // Tutto quello che riguarda questo furgone si salva in un solo blocco: più veloce e mai a metà
+    const operazioni: BatchItem<"sqlite">[] = [];
+
+    // Diario conducenti: le righe del registro si rifanno da capo (nel programma non si modificano)
+    operazioni.push(db.delete(driverLogs).where(and(eq(driverLogs.vehicleId, vehicleId), like(driverLogs.note, `${MARCA_REGISTRO}%`))));
+    for (let i = 0; i < p.diario.length; i += 200) {
+      operazioni.push(
+        db.insert(driverLogs).values(p.diario.slice(i, i + 200).map((v) => ({ vehicleId, data: v.data, conducente: v.conducente, note: v.note })))
+      );
     }
     presenze += p.diario.length;
 
-    // Manutenzioni del registro (senza costo: il costo lo scrive chi fa la contabilità)
-    await db.delete(maintenances).where(and(eq(maintenances.vehicleId, vehicleId), like(maintenances.descrizione, `${MARCA_REGISTRO}%`)));
+    // Manutenzioni del registro (senza costo: il costo lo scrive chi fa la contabilità). Si aggiornano senza
+    // cancellarle, così costo, officina, km e scadenze scritti nel programma restano. Una manutenzione che
+    // non c'è più nel registro si toglie solo se nessuno l'ha completata a mano.
+    const esistenti = await db
+      .select()
+      .from(maintenances)
+      .where(and(eq(maintenances.vehicleId, vehicleId), like(maintenances.descrizione, `${MARCA_REGISTRO}%`)));
+    const perChiave = new Map<string, Manutenzione[]>();
+    for (const e of esistenti) {
+      const k = `${e.data}|${e.descrizione}`;
+      perChiave.set(k, [...(perChiave.get(k) ?? []), e]);
+    }
     for (const m of p.manutenzioni) {
       const periodo = m.fineAl ? `dal ${m.data} al ${m.fineAl}` : `dal ${m.data} (in corso)`;
-      await db.insert(maintenances).values({
-        vehicleId,
-        data: m.data,
-        tipo: m.tipo,
-        descrizione: m.descrizione,
-        dettaglioLavori: [periodo, m.dettaglioLavori].filter(Boolean).join(" · "),
-      });
+      const dettaglioLavori = [periodo, m.dettaglioLavori].filter(Boolean).join(" · ");
+      const giaCe = perChiave.get(`${m.data}|${m.descrizione}`)?.shift();
+      if (!giaCe) {
+        operazioni.push(db.insert(maintenances).values({ vehicleId, data: m.data, tipo: m.tipo, descrizione: m.descrizione, dettaglioLavori }));
+      } else if (completataAMano(giaCe)) {
+        // completata a mano: si aggiorna solo il periodo «dal … al …», il resto lo ha scritto qualcuno
+        const vecchio = giaCe.dettaglioLavori ?? "";
+        const nuovo = RE_PERIODO.test(vecchio) ? vecchio.replace(RE_PERIODO, periodo) : [periodo, vecchio].filter(Boolean).join(" · ");
+        if (nuovo !== vecchio) operazioni.push(db.update(maintenances).set({ dettaglioLavori: nuovo }).where(eq(maintenances.id, giaCe.id)));
+      } else if (giaCe.tipo !== m.tipo || giaCe.dettaglioLavori !== dettaglioLavori) {
+        operazioni.push(db.update(maintenances).set({ tipo: m.tipo, dettaglioLavori }).where(eq(maintenances.id, giaCe.id)));
+      }
+    }
+    for (const resto of perChiave.values()) {
+      for (const e of resto) if (!completataAMano(e)) operazioni.push(db.delete(maintenances).where(eq(maintenances.id, e.id)));
     }
     totManutenzioni += p.manutenzioni.length;
 
     if (p.stato && p.stato !== esistente[0]?.stato) {
-      await db.update(vehicles).set({ stato: p.stato }).where(eq(vehicles.id, vehicleId));
+      operazioni.push(db.update(vehicles).set({ stato: p.stato }).where(eq(vehicles.id, vehicleId)));
       statiAggiornati++;
     }
+    const [prima, ...altre] = operazioni;
+    await db.batch([prima, ...altre]);
     p.sostitutive.forEach((t) => sostitutive.add(t));
   }
 

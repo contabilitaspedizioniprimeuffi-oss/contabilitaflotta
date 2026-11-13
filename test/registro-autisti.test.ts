@@ -93,3 +93,16 @@ test("pianoImportazione: diario per autista, manutenzioni con periodo, stato cor
     "STATO\t2026-11-01\tCC333CC\t\t\tMANUTENZIONE\tGOMME\t\t\tSTATI MEZZI"].join("\n")).righe, "2026-11-12").get("CC333CC")!;
   assert.equal(p2.manutenzioni[0].fineAl, null); assert.equal(p2.manutenzioni[0].tipo, "gomme"); assert.equal(p2.stato, "in_manutenzione");
 });
+
+test("pianoImportazione: due manutenzioni lo stesso giorno si chiudono entrambe, una riga ripetuta non raddoppia", () => {
+  const righe = leggiUscitaAutisti([
+    "--- USCITA_AUTISTI ---", INTESTAZIONE,
+    "STATO\t2026-10-06\tDD444DD\t\t\tMANUTENZIONE\tFRENI\t\t\tSTATI MEZZI",
+    "STATO\t2026-10-06\tDD444DD\t\t\tMANUTENZIONE\tGOMME\t\t\tSTATI MEZZI",
+    "STATO\t2026-10-06\tDD444DD\t\t\tMANUTENZIONE\tGOMME\t\t\tSTATI MEZZI",
+    "STATO\t2026-10-09\tDD444DD\t\t\tIN SERVIZIO\t\t\t\tSTATI MEZZI",
+  ].join("\n")).righe;
+  const d = pianoImportazione(righe, "2026-11-12").get("DD444DD")!;
+  assert.deepEqual(d.manutenzioni.map((m) => [m.tipo, m.data, m.fineAl]), [["freni", "2026-10-06", "2026-10-09"], ["gomme", "2026-10-06", "2026-10-09"]]);
+  assert.equal(d.stato, "attivo");
+});

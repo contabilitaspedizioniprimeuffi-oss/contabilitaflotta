@@ -221,17 +221,23 @@ export function pianoImportazione(righe: RigaUscita[], oggi: string): Map<string
       }
       if (r.targaSostitutiva && !p.sostitutive.includes(r.targaSostitutiva)) p.sostitutive.push(r.targaSostitutiva);
     } else {
-      // STATO: chiude l'eventuale manutenzione aperta e, se è una manutenzione, ne apre una nuova
-      const aperta = p.manutenzioni.find((m) => m.fineAl === null);
-      if (aperta && (r.stato !== "MANUTENZIONE" || aperta.data !== r.data)) aperta.fineAl = r.data;
+      // STATO: chiude le manutenzioni aperte (anche più d'una nello stesso giorno) e, se è una
+      // manutenzione, ne apre una nuova
+      for (const m of p.manutenzioni) {
+        if (m.fineAl === null && (r.stato !== "MANUTENZIONE" || m.data !== r.data)) m.fineAl = r.data;
+      }
       if (r.stato === "MANUTENZIONE") {
-        p.manutenzioni.push({
-          data: r.data,
-          tipo: tipoManutenzione(r.causale),
-          descrizione: conMarca(`Manutenzione${r.causale ? ` · ${r.causale}` : ""}`),
-          dettaglioLavori: [r.targaSostitutiva ? `sostitutiva ${r.targaSostitutiva}` : "", r.note].filter(Boolean).join(" · "),
-          fineAl: null,
-        });
+        const descrizione = conMarca(`Manutenzione${r.causale ? ` · ${r.causale}` : ""}`);
+        // la stessa riga ripetuta nel registro non crea una seconda manutenzione
+        if (!p.manutenzioni.some((m) => m.fineAl === null && m.data === r.data && m.descrizione === descrizione)) {
+          p.manutenzioni.push({
+            data: r.data,
+            tipo: tipoManutenzione(r.causale),
+            descrizione,
+            dettaglioLavori: [r.targaSostitutiva ? `sostitutiva ${r.targaSostitutiva}` : "", r.note].filter(Boolean).join(" · "),
+            fineAl: null,
+          });
+        }
       }
       if (r.targaSostitutiva && !p.sostitutive.includes(r.targaSostitutiva)) p.sostitutive.push(r.targaSostitutiva);
       if (r.data <= oggi) {
