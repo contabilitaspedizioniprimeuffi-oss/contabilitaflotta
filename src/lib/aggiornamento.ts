@@ -12,7 +12,7 @@
 //     una finestra visibile, strumenti/aggiorna-e-riapri.ps1; il server si
 //     chiude da solo, lo script esegue lo stesso aggiornamento e riapre il
 //     programma da "Banca Dati Automezzi.exe".
-// I dati (local_database.db, sheets_dump.txt, .env.local) non vengono toccati.
+// I dati (local_database.db, sheets_dump.txt, sheets_dump_autisti.txt, .env.local) non vengono toccati.
 // ---------------------------------------------------------------------------
 import { execFile, spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";

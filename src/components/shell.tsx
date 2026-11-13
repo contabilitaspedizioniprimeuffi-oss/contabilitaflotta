@@ -16,6 +16,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import CercaTarga from "@/components/cerca-targa";
 import GithubSync from "@/components/github-sync";
 import SyncButton from "@/components/sync-button";
+import SyncAutistiButton from "@/components/sync-autisti-button";
 
 const NAV = [
   { href: "/", label: "Panoramica", sub: "cruscotto flotta", icon: LayoutDashboard },
@@ -124,6 +125,7 @@ export default function Shell({ children }: { children: ReactNode }) {
         {/* Sync Action */}
         <div className="space-y-2 px-3 pb-2 pt-1">
           <SyncButton variant="sidebar" />
+          <SyncAutistiButton variant="sidebar" />
           <GithubSync />
         </div>
 
