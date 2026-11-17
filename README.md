@@ -47,7 +47,7 @@ La logica dell'aggiornamento è in `strumenti/aggiorna.ps1`, il pulsante in `src
 - **Sincronizza Fogli** legge il Foglio Google online tramite una piccola «antenna» Apps Script nel proprio Drive (codice in `strumenti/foglio-google.gs`; basta che il Foglio sia condiviso con il proprio account). Si collega una volta sola dal programma: **Sincronizza Fogli › Foglio Google** (le istruzioni sono nella finestra).
 - L'indirizzo dello script si salva nel file **`.env.local`** del PC (`GOOGLE_SHEET_URL=...`): funziona come una password, non va mai su GitHub e gli aggiornamenti non lo toccano.
 - Ogni sincronizzazione riuscita salva una copia dei dati in **`sheets_dump.txt`**: se manca internet, il programma usa quella copia e lo segnala. Il file contiene dati reali e non viene mai pubblicato su GitHub.
-- L'ID del Foglio Google (`GOOGLE_SHEET_ID=...` nel file **`.env`**) serve solo per il link «Apri il Foglio».
+- L'ID del Foglio Google (`GOOGLE_SHEET_ID=...` nel file **`.env`** del PC) serve solo per il link «Apri il Foglio». Il file `.env` non è su GitHub: resta solo sul PC e gli aggiornamenti non lo cancellano.
 
 ### Registro autisti (secondo Foglio Google)
 - Il pulsante **Registro autisti** (sidebar e Panoramica) legge il Foglio «registro presenze autisti» tramite una **seconda antenna** (codice in `strumenti/foglio-google-autisti.gs`, stessi passi dell'altra). Al primo clic chiede l'indirizzo dell'app web e lo salva in `.env.local` (`GOOGLE_SHEET_URL_AUTISTI=...`, mai su GitHub).
