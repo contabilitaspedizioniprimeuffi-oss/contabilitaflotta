@@ -3,7 +3,9 @@ import { drizzle } from "drizzle-orm/libsql";
 import * as path from "path";
 import * as schema from "./schema";
 
-const dbFile = path.resolve(process.cwd(), "local_database.db");
+// Sul server il percorso arriva da BDA_DB_PATH (cartella dati separata dal codice); sul PC la variabile non c'è
+// e il database resta local_database.db nella cartella del programma
+const dbFile = process.env.BDA_DB_PATH ? path.resolve(process.env.BDA_DB_PATH) : path.resolve(process.cwd(), "local_database.db");
 export const client = createClient({ url: `file:${dbFile}` });
 
 export const DDL_SCHEMA = `

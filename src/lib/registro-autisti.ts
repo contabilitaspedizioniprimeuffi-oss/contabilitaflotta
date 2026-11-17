@@ -213,7 +213,9 @@ export function pianoImportazione(righe: RigaUscita[], oggi: string): Map<string
 
   for (const { r } of ordinate) {
     const p = prendi(r.targa);
-    if (r.origine !== "NOLEGGI") p.haPagina = true;
+    // NOLEGGI e DA VERIFICARE (pony con targa provvisoria) non sono pagine di furgoni: se la targa non è nel
+    // programma le loro righe si saltano, non si crea un mezzo
+    if (r.origine !== "NOLEGGI" && r.origine !== "DA VERIFICARE") p.haPagina = true;
     if (r.tipo === "PRESENZA") {
       const nota = conMarca(r.stato ? descriviStato(r) : "", r.note, r.origine === "NOLEGGI" ? "pagina NOLEGGI" : "");
       for (const a of [r.autista1, r.autista2]) {

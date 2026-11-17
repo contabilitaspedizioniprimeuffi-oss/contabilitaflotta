@@ -106,3 +106,22 @@ test("pianoImportazione: due manutenzioni lo stesso giorno si chiudono entrambe,
   assert.deepEqual(d.manutenzioni.map((m) => [m.tipo, m.data, m.fineAl]), [["freni", "2026-10-06", "2026-10-09"], ["gomme", "2026-10-06", "2026-10-09"]]);
   assert.equal(d.stato, "attivo");
 });
+
+test("pianoImportazione: righe DA VERIFICARE (pony con targa provvisoria) senza pagina; colonne nuove in fondo ignorate", () => {
+  const testo = [
+    "--- USCITA_AUTISTI ---",
+    `${INTESTAZIONE}\tPOSSESSO\tSOCIETA\tDATA_RESTITUZIONE`,
+    "PRESENZA\t2026-11-10\tPO901NY\tPONY UNO\t\t\t\t\t\tDA VERIFICARE\t\t\t",
+    "PRESENZA\t2026-11-11\tPO902NY\tPONY DUE\t\t\t\t\t\tDA VERIFICARE\t\t\t",
+    "PRESENZA\t2026-11-10\tEE555EE\tMARIO ROSSI\t\t\t\t\t\tPAGINA\tNOLEGGIO\tSOCIETA ESEMPIO\t2026-12-31",
+  ].join("\n");
+  const { righe, scartate } = leggiUscitaAutisti(testo);
+  assert.equal(scartate, 0);
+  assert.equal(righe.length, 3);
+  const piano = pianoImportazione(righe, "2026-11-12");
+  assert.ok(!piano.get("PO901NY")!.haPagina);
+  assert.ok(!piano.get("PO902NY")!.haPagina);
+  const e = piano.get("EE555EE")!;
+  assert.ok(e.haPagina);
+  assert.deepEqual(e.diario.map((d) => [d.data, d.conducente]), [["2026-11-10", "MARIO ROSSI"]]);
+});
